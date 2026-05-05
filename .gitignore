@@ -1,0 +1,33 @@
+# ── Ambiente virtuale ─────────────────────────────────────────────────
+venv/
+
+# ── Python cache ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── PyInstaller ───────────────────────────────────────────────────────
+build/
+dist/
+*.spec.bak
+
+# ── Cartella old (backup locale) ──────────────────────────────────────
+old/
+
+# ── Eseguibili esterni (non vanno nel repo) ───────────────────────────
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+
+# ── File di configurazione locale ────────────────────────────────────
+settings.json
+storico.json
+archive.txt
+
+# ── File di sistema ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── VS Code ───────────────────────────────────────────────────────────
+.vscode/

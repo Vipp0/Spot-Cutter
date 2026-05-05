@@ -1,0 +1,560 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   style.qss — Spot Cutter Ultra 0.86
+   Gestisce TUTTA la grafica dell'applicazione.
+   Il main.py non contiene più nessun colore, font o setStyleSheet inline.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── FINESTRA E SFONDI ─────────────────────────────────────────────────── */
+QMainWindow,
+QWidget#central {
+    background-color: #F0F2F5;
+}
+
+QWidget#sidebar {
+    background-color: #FFFFFF;
+    border-right: 1px solid #E0E0E0;
+}
+
+QWidget#main_area {
+    background-color: #F0F2F5;
+}
+
+/* ── INTESTAZIONI ──────────────────────────────────────────────────────── */
+QLabel#app_title {
+    color: #004578; /* Blu più scuro e serio */
+    font-size: 22px;
+    font-weight: 800; /* Extra Bold */
+    font-family: 'Segoe UI Variable Display', 'Segoe UI';
+}
+
+QLabel#main_title {
+    color: #0D47A1;
+    font-size: 24px;
+    font-weight: 800;
+    font-family: 'Segoe UI Variable Display', 'Segoe UI';
+}
+
+/* ── ETICHETTE GENERICHE ───────────────────────────────────────────────── */
+QLabel#lbl_section {
+    color: #2C3E6B;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'Segoe UI', system-ui;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    padding-top: 4px;
+    padding-bottom: 2px;
+}
+
+QLabel#lbl_progress {
+    color: #1A1A2E;
+    font-size: 11px;
+    font-weight: bold;
+    font-family: 'Segoe UI';
+}
+
+QLabel#lbl_stat_sidebar {
+    color: #505050; /* Dal grigio chiaro al grigio antracite */
+    font-size: 12px;
+    font-weight: 600; /* Semi-bold */
+    text-transform: uppercase;
+}
+
+QLabel#lbl_stat_main {
+    color: #1A1A2E;
+    font-size: 12px;
+    font-family: 'Segoe UI';
+}
+
+QLabel#lbl_empty_queue {
+    color: #9E9E9E;
+    font-size: 13px;
+    font-family: 'Segoe UI';
+    padding: 40px;
+}
+
+/* ── BARRA STATISTICHE IN ALTO ─────────────────────────────────────────── */
+QWidget#stats_bar {
+    background-color: rgba(255, 255, 255, 180); /* Leggermente meno trasparente */
+    border-radius: 10px;
+    border: 1px solid #E0E0E0; /* Aggiunge definizione */
+}
+
+/* Colori dinamici per i contatori statistiche */
+QLabel#lbl_stat_spot         { color: #2ECC71; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_promo        { color: #F1C40F; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_bumper       { color: #00E5FF; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_annunci      { color: #FF85FF; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_natale       { color: #FF3D00; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_cartelli     { color: #A0A0A0; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_videosigle   { color: #BF94FF; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_telegiornali { color: #FFAB40; font-weight: 800; font-size: 13px; }
+QLabel#lbl_stat_other         { color: #9E9E9E; font-weight: 800; font-size: 13px; }
+
+
+/* ── CAMPO DI TESTO E BARRA UNICA ────────────────────────────────────────── */
+QLineEdit {
+    border: 1px solid #707070;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: 'Segoe UI';
+    font-weight: 500;
+    background: white;
+    color: #000000;
+}
+
+/* Nota: lo spessore del bordo passa a 2px al focus, 
+   quindi dobbiamo assicurarci che il pulsante segua o non sballi */
+QLineEdit:focus {
+    border: 2px solid #0078D4;
+}
+
+/* Modifiche specifiche per la "Barra Unica" YouTube */
+QLineEdit#yt_entry {
+    /* Rimuoviamo min-height e usiamo un'altezza fissa coerente col Python */
+    height: 36px; 
+    border-right: none;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    margin: 0px; /* Fondamentale per l'allineamento */
+}
+
+/* Il tasto Incolla integrato */
+QPushButton#btn_paste {
+    background-color: white;
+    border: 1px solid #707070;
+    border-left: 1px solid #EAEAEA;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    color: #333333;
+    font-family: "Segoe Fluent Icons", "Segoe UI Symbol";
+    font-size: 14px;
+    margin: 0px;     /* Rimuove margini esterni */
+    padding: 0px;    /* Rimuove padding interni che spingono il bordo */
+}
+
+QPushButton#btn_paste:hover {
+    background-color: #F3F3F3;
+    color: #0078D4;
+}
+
+QPushButton#btn_paste:pressed {
+    background-color: #E5E5E5;
+}
+
+QPushButton#btn_paste:hover {
+    background-color: #F3F3F3;
+    color: #0078D4; /* L'icona diventa blu Windows */
+}
+
+QPushButton#btn_paste:pressed {
+    background-color: #E5E5E5;
+}
+
+/* ── SEPARATORI ─────────────────────────────────────────────────────────── */
+QFrame#separator {
+    color: #E0E0E0;
+    background-color: #E0E0E0;
+    max-height: 1px;
+    border: none;
+}
+
+/* Bottoni secondari sidebar (bianco con bordo) */
+QPushButton#btn_work_dir,
+QPushButton#btn_storico,
+QPushButton#btn_settings {
+    background-color: #F5F6F8;
+    border: 1px solid #D8DCE0;
+    color: #404040;
+    font-size: 13px;
+    font-weight: 400;
+    border-radius: 8px;
+    min-height: 36px;
+    text-align: center;
+    padding: 0 12px;
+}
+QPushButton#btn_work_dir:hover,
+QPushButton#btn_storico:hover,
+QPushButton#btn_settings:hover {
+    background-color: #E8ECF0;
+    color: #1a1a1a;
+}
+
+/* ── PILLOLA YOUTUBE (IMPORTA + DOWNLOAD DIRETTO) ────────────────────────── */
+
+/* Tasto Sinistro: IMPORTA */
+QPushButton#btn_yt_left {
+    background-color: #CC0000; /* Rosso YouTube originale */
+    color: white;
+    border: none;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    border-right: 1px solid rgba(255, 255, 255, 0.15); /* Linea di separazione sottile */
+    font-size: 13px;
+    font-weight: 700;
+    font-family: 'Segoe UI';
+    min-height: 40px;
+    text-transform: uppercase;
+}
+
+QPushButton#btn_yt_left:hover { 
+    background-color: #A30000; 
+}
+
+/* Tasto Destro: DOWNLOAD DIRETTO (Freccia) */
+QPushButton#btn_yt_right {
+    background-color: #CC0000;
+    color: white;
+    border: none;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    min-height: 40px;
+}
+
+QPushButton#btn_yt_right:hover { 
+    background-color: #A30000; 
+}
+
+/* Stati disabilitati per la pillola (quando scarica) */
+QPushButton#btn_yt_left:disabled, 
+QPushButton#btn_yt_right:disabled { 
+    background-color: #D0D0D0; 
+    color: #888888; 
+    border-right: 1px solid #C0C0C0;
+}
+
+/* Bottoni Sfoglia/Aggiungi (Blu Windows più profondo) */
+QPushButton#btn_folder,
+QPushButton#btn_files {
+    background-color: #0063B1; /* Blu più intenso */
+    color: white;
+    border: 1px solid #004E8C;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'Segoe UI';
+    min-height: 42px;
+    text-transform: uppercase;
+}
+QPushButton#btn_folder:hover,
+QPushButton#btn_files:hover { background-color: #0078D4; border-color: #005A9E; }
+
+/* Bottone Svuota Coda (Grigio Ardesia, non sbiadito) */
+QPushButton#btn_clear {
+    background-color: #37474F;
+    color: #FFFFFF;
+    border: 1px solid #263238;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'Segoe UI';
+    min-height: 38px;
+    letter-spacing: 0.5px;
+}
+QPushButton#btn_clear:hover { 
+    background-color: #455A64; 
+    color: #FFD54F;           /* Un tocco di giallo al passaggio del mouse per feedback visivo */
+}
+
+QPushButton#btn_clear:disabled { 
+    background-color: #BDBDBD; 
+    color: #757575; 
+    border: none;
+}
+
+/* IL TASTO AVVIA (Il Re della UI) */
+QPushButton#btn_run {
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 18px; /* Più grande */
+    font-weight: 800; /* Extra Bold */
+    font-family: 'Segoe UI';
+    min-height: 55px;
+    letter-spacing: 1px; /* Lettere leggermente distanziate per leggibilità */
+}
+QPushButton#btn_run[stato="pronto"] {
+    background-color: #1B5E20; /* Verde foresta, molto visibile */
+    border-bottom: 3px solid #0D3F12; /* Effetto profondità */
+}
+QPushButton#btn_run[stato="pronto"]:hover {
+    background-color: #2E7D32;
+    margin-top: 2px; /* Simula la pressione */
+    border-bottom: 1px solid #0D3F12;
+}
+QPushButton#btn_run[stato="disabilitato"] {
+    background-color: #616161; /* Grigio scuro per indicare "errore/bloccato" */
+    color: #E0E0E0;
+}
+QPushButton#btn_run:disabled {
+    background-color: #BDBDBD;
+    color: #757575;
+}
+
+/* Bottone STOP (Aggressivo e chiaro) */
+QPushButton#btn_stop {
+    background-color: #D32F2F;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 800;
+    font-family: 'Segoe UI';
+    min-height: 45px;
+    text-transform: uppercase;
+}
+QPushButton#btn_stop:hover { background-color: #B71C1C; }
+
+/* ── CODA VIDEO ─────────────────────────────────────────────────────────── */
+QScrollArea#queue_scroll {
+    background-color: #EBEDF0;
+    border-radius: 12px;
+    border: none;
+}
+
+QWidget#queue_container {
+    background-color: #EBEDF0;
+}
+
+/* ── VIDEO CARD ─────────────────────────────────────────────────────────── */
+QFrame#VideoCard {
+    background-color: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 8px;
+}
+
+QFrame#VideoCard:hover {
+    border-color: #0078D4;
+    background-color: #F9FBFD;
+}
+
+/* Badge numero */
+QLabel#badge_index {
+    color: #616161;
+    font-weight: 800;
+    font-size: 12px;
+    font-family: 'Segoe UI';
+}
+
+/* Titolo video nella card */
+QLabel#card_title {
+    color: #050505;
+    font-weight: 700;
+    font-size: 14px;
+    font-family: 'Segoe UI';
+}
+
+/* --- NUOVA PILLOLA DOPPIA (TXT e DATA) --- */
+QLabel#pill_part_txt {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-top-right-radius: 0px;    /* Piatto a destra */
+    border-bottom-right-radius: 0px; /* Piatto a destra */
+    margin-right: 0px;
+}
+
+QLabel#pill_part_date {
+    border-top-left-radius: 0px;     /* Piatto a sinistra */
+    border-bottom-left-radius: 0px;  /* Piatto a sinistra */
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    margin-left: 0px;
+}
+
+/* Effetto al passaggio del mouse */
+QLabel#pill_part_txt:hover, 
+QLabel#pill_part_date:hover {
+    /* Crea un effetto di "illuminazione" sopra il colore esistente */
+    background-color: rgba(255, 255, 255, 0.2); 
+    border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* ── BOTTONI CARD (Moderni & Hover) ─────────────────────────────────────── */
+QPushButton#btn_card_move,
+QPushButton#btn_card_cut, 
+QPushButton#btn_card_delete {
+    background-color: #F0F2F5; /* Sfondo leggero di base per dargli corpo */
+    border: 1px solid #D0D0D0;
+    color: #616161; /* Grigio scuro visibile */
+    
+    /* Font Bold e dimensione maggiore per icone Solid */
+    font-size: 16px;
+    font-weight: 800; /* Extra Bold per il feeling "cicciotto" */
+    font-family: 'Segoe UI', system-ui; /* Font di sistema solido */
+    
+    border-radius: 17px; /* Cerchio perfetto per tasto 34x34 */
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 34px;
+    max-height: 34px;
+}
+
+/* Hover Sposta Su/Giù (▲ ▼) */
+QPushButton#btn_card_move:hover {
+    background-color: #0063B1; /* Blu pieno */
+    color: white; /* Icona diventa bianca */
+    border: 1px solid #004578;
+}
+
+/* Hover Cancella (✕) */
+QPushButton#btn_card_delete:hover {
+    background-color: #CC0000; /* Rosso YouTube pieno */
+    color: white; /* X diventa bianca */
+    border: 1px solid #800000;
+}
+
+/* Stato Disabilitato */
+QPushButton#btn_card_move:disabled, 
+QPushButton#btn_card_delete:disabled {
+    background-color: #E0E0E0;
+    border: 1px solid #C0C0C0;
+    color: #A0A0A0;
+}
+
+/* ── BARRE PROGRESSO ────────────────────────────────────────────────────── */
+QProgressBar {
+    border: none;
+    border-radius: 5px;
+    background-color: #BDBDBD;
+    max-height: 10px;
+    text-align: center;
+}
+
+QProgressBar#pb_current::chunk {
+    background-color: #0078D4;
+    border-radius: 5px;
+}
+
+QProgressBar#pb_global::chunk {
+    background-color: #28a745;
+    border-radius: 5px;
+}
+
+/* ── LOG CONSOLE ────────────────────────────────────────────────────────── */
+QTextEdit#log_box {
+    background-color: #0A0A0A; /* Sfondo più nero */
+    color: #FFFFFF;           /* Testo bianco puro per contrasto */
+    border-radius: 8px;
+    font-family: 'Consolas', 'Cascadia Code', monospace;
+    font-size: 12px;
+    font-weight: 600;         /* Testo più spesso per evitare l'effetto sgranato */
+    padding: 10px;
+}
+
+/* ── SCROLLBAR ──────────────────────────────────────────────────────────── */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #C1C1C1;
+    border-radius: 4px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #A8A8A8; }
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+    border: none;
+    background: transparent;
+    height: 8px;
+}
+QScrollBar::handle:horizontal {
+    background: #C1C1C1;
+    border-radius: 4px;
+}
+QScrollBar::handle:horizontal:hover { background: #A8A8A8; }
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal { width: 0; }
+
+/* ── DIALOGHI ───────────────────────────────────────────────────────────── */
+QDialog {
+    background-color: #FFFFFF;
+}
+
+/* Bottoni dialogo Impostazioni */
+QPushButton#btn_dlg_save {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 13px;
+    font-family: 'Segoe UI';
+}
+QPushButton#btn_dlg_save:hover { background-color: #1e7e34; }
+
+QPushButton#btn_dlg_reset,
+QPushButton#btn_dlg_cancel {
+    background-color: #9E9E9E;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-family: 'Segoe UI';
+}
+QPushButton#btn_dlg_reset:hover,
+QPushButton#btn_dlg_cancel:hover { background-color: #757575; }
+
+/* Bottone salva editor TXT */
+QPushButton#btn_txt_save {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: bold;
+    font-size: 13px;
+    font-family: 'Segoe UI';
+}
+QPushButton#btn_txt_save:hover { background-color: #1e7e34; }
+
+/* Bottoni dialogo data */
+QPushButton#btn_date_save {
+    background-color: #0078D4;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 18px;
+    font-family: 'Segoe UI';
+}
+QPushButton#btn_date_save:hover { background-color: #005A9E; }
+
+/* Etichette dialogo */
+QLabel#lbl_dlg_filename {
+    color: #9E9E9E;
+    font-style: italic;
+    font-size: 11px;
+    font-family: 'Segoe UI';
+}
+
+QLabel#lbl_dlg_error {
+    color: #E62117;
+    font-size: 11px;
+    font-family: 'Segoe UI';
+}
+
+/* Editor TXT */
+QTextEdit#txt_editor {
+    border: 1px solid #E0E0E0;
+    border-radius: 6px;
+    font-family: 'Consolas';
+    font-size: 13px;
+    color: #1A1A2E;
+    background-color: #FAFAFA;
+}
+QTextEdit#txt_editor:focus {
+    border-color: #0078D4;
+}
