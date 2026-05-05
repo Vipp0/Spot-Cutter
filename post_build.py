@@ -13,21 +13,26 @@ os.makedirs(BIN_DIR, exist_ok=True)
 print(f"✅ Cartella bin creata in {BIN_DIR}")
 
 # Crea file README dentro bin
-readme = """SPOT CUTTER — Cartella bin
+readme = """SPOT CUTTER — bin folder
 ================================
-Inserire in questa cartella i seguenti eseguibili:
+IT: Inserire in questa cartella i seguenti eseguibili:
+EN: Place the following executables in this folder:
 
   ffmpeg.exe   — https://ffmpeg.org/download.html
-  ffprobe.exe  — (incluso nel pacchetto ffmpeg)
+  ffprobe.exe  — https://ffmpeg.org/download.html (included with ffmpeg)
   yt-dlp.exe   — https://github.com/yt-dlp/yt-dlp/releases
 
-Il programma cerca automaticamente gli eseguibili prima
-in questa cartella bin/, poi nella cartella principale,
-poi nel PATH di sistema.
+IT: Il programma cerca automaticamente gli eseguibili prima
+    in questa cartella bin/, poi nella cartella principale,
+    poi nel PATH di sistema.
+
+EN: The program automatically searches for executables first
+    in this bin/ folder, then in the main folder,
+    then in the system PATH.
 """
-with open(os.path.join(BIN_DIR, "LEGGI_QUI.txt"), "w", encoding="utf-8") as f:
+with open(os.path.join(BIN_DIR, "README.txt"), "w", encoding="utf-8") as f:
     f.write(readme)
-print("✅ File LEGGI_QUI.txt creato")
+print("✅ File README.txt creato")
 
 # Copia automatica exe se presenti nella cartella del progetto
 EXE_LIST = ["ffmpeg.exe", "ffprobe.exe", "yt-dlp.exe"]
