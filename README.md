@@ -77,6 +77,12 @@ Distribuito sotto licenza MIT. Vedi [LICENSE](LICENSE) per i dettagli.
 
 ---
 
+## ⚠️ Disclaimer
+
+This software is intended for personal archival use only. Users are responsible for ensuring their use complies with applicable laws and the terms of service of any platforms accessed. The author does not condone copyright infringement.
+
+---
+
 ## 🙏 Crediti
 
 - [FFmpeg](https://ffmpeg.org/) — elaborazione video
