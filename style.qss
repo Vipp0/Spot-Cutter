@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   style.qss — Spot Cutter Ultra 0.86
+   style.qss — Spot Cutter
    Gestisce TUTTA la grafica dell'applicazione.
    Il main.py non contiene più nessun colore, font o setStyleSheet inline.
    ═══════════════════════════════════════════════════════════════════════ */

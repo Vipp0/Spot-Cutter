@@ -1,4 +1,4 @@
-# 🎬 Spot Cutter Ultra
+# 🎬 Spot Cutter
 
 > Taglia automaticamente spot pubblicitari, promo, bumper e sigle da registrazioni TV e videocassette digitalizzate.
 
@@ -11,7 +11,7 @@
 
 ## 📌 Cos'è
 
-Spot Cutter Ultra è un'applicazione desktop per Windows che permette di estrarre automaticamente spot pubblicitari, promo, bumper e sigle da video di registrazioni televisive o cassette digitalizzate.
+Spot Cutter è un'applicazione desktop per Windows che permette di estrarre automaticamente spot pubblicitari, promo, bumper e sigle da video di registrazioni televisive o cassette digitalizzate.
 
 Il programma analizza i fotogrammi neri tra i contenuti per individuare i punti di stacco e, guidato da un semplice file di testo con i timestamp, taglia e organizza automaticamente i clip nella tua libreria.
 

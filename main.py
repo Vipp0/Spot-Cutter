@@ -1,5 +1,5 @@
 """
-main.py — Spot Cutter Ultra 1.0  (PySide6)
+main.py — Spot Cutter 1.0  (PySide6)
 Conversione completa da Flet a PySide6.
 video_engine.py e utils.py rimangono invariati.
 
@@ -873,7 +873,7 @@ class SpotCutterApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Spot Cutter Ultra  ")
+        self.setWindowTitle("Spot Cutter - Organizzatore Spot TV")
         self.setWindowIcon(QIcon(resource_path("Spot_Cutter.ico")))
         self.resize(1200, 900)
         self.setMinimumSize(1000, 700)

@@ -13,7 +13,7 @@ os.makedirs(BIN_DIR, exist_ok=True)
 print(f"✅ Cartella bin creata in {BIN_DIR}")
 
 # Crea file README dentro bin
-readme = """SPOT CUTTER ULTRA — Cartella bin
+readme = """SPOT CUTTER — Cartella bin
 ================================
 Inserire in questa cartella i seguenti eseguibili:
 

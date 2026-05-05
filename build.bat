@@ -1,6 +1,6 @@
 @echo off
 echo ╔═══════════════════════════════════╗
-echo ║   SPOT CUTTER ULTRA — Build Tool  ║
+echo ║   SPOT CUTTER — Build Tool  ║
 echo ╚═══════════════════════════════════╝
 echo.
 
