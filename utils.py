@@ -18,7 +18,7 @@ SETTINGS_DEFAULTS = {
     "crf": "20", "cusc_i": "0.05", "cusc_f": "0.12",
     "toll": "2.0", "bth": "0.1", "bdur": "0.1",
     "parallel_cuts": "0", "silence_thresh": "-35dB",
-    "silence_dur": "0.1"
+    "silence_dur": "0.1", "auto_start_after_yt": False
 }
 
 # ── RICERCA ESEGUIBILI ESTERNI ────────────────────────────────────────────
@@ -180,12 +180,13 @@ def load_settings():
     except: return dict(SETTINGS_DEFAULTS)
 
 def save_settings(crf, cusc_i, cusc_f, toll, bth, bdur, parallel_cuts="0",
-                  silence_thresh="-35dB", silence_dur="0.1"):
+                  silence_thresh="-35dB", silence_dur="0.1", auto_start_after_yt=False):
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump({"crf": crf, "cusc_i": str(cusc_i), "cusc_f": str(cusc_f),
+            json.dump({"crf": crf, "cusc_i": str(cusc_i), "cusc_f": str(cusc_f), 
                        "toll": str(toll), "bth": bth, "bdur": bdur,
                        "parallel_cuts": str(parallel_cuts),
-                       "silence_thresh": str(silence_thresh),
-                       "silence_dur": str(silence_dur)}, f, indent=2)
+                       "silence_thresh": silence_thresh,
+                       "silence_dur": silence_dur,
+                       "auto_start_after_yt": auto_start_after_yt}, f, indent=2)
     except Exception as e: print(f"⚠️ Errore settings: {e}")

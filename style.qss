@@ -558,3 +558,25 @@ QTextEdit#txt_editor {
 QTextEdit#txt_editor:focus {
     border-color: #0078D4;
 }
+
+/* ── BOTTONI SESSIONE ───────────────────────────────────────────────────── */
+QPushButton#btn_session {
+    background-color: #FFFFFF;
+    border: 1.5px solid #B0B8C4;
+    color: #1a1a1a;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'Segoe UI';
+    border-radius: 6px;
+    min-height: 28px;
+    padding: 0 10px;
+}
+QPushButton#btn_session:hover {
+    background-color: #E0E4EA;
+    color: #1a1a1a;
+}
+QPushButton#btn_session:disabled {
+    background-color: #EBEBEB;
+    color: #AAAAAA;
+    border-color: #E0E0E0;
+}

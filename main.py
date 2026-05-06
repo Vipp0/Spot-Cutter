@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QTextEdit, QScrollArea,
     QFrame, QSizePolicy, QDialog, QDialogButtonBox, QFileDialog,
     QMessageBox, QProgressBar, QSplitter, QStyle, QPlainTextEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox
 )
 from PySide6.QtCore import (
     Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings
@@ -227,10 +227,11 @@ class VideoCard(QFrame):
     def __init__(self, idx: int, vid: str, has_txt: bool,
                  status_text: str, status_color: str,
                  is_first: bool, is_last: bool,
-                 is_running: bool, parent=None):
+                 is_running: bool, current_dir: str = "", parent=None):
         super().__init__(parent)
         self.idx = idx
         self.vid = vid
+        self.current_dir = current_dir
 
         self.setObjectName("VideoCard")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -319,6 +320,31 @@ class VideoCard(QFrame):
         self.txt_part.mousePressEvent = lambda e: self.sig_edit_txt.emit(self.vid)
         self.date_part.mousePressEvent = lambda e: self.sig_edit_date.emit(self.idx)
 
+        # Tooltip anteprima TXT
+        self._update_txt_tooltip()
+
+    def _update_txt_tooltip(self):
+        """Mostra le prime 8 righe del TXT come tooltip sulla pillola sinistra."""
+        if "NO TXT" in self.txt_part.text():
+            self.txt_part.setToolTip("Nessun file TXT associato.\nClicca per crearne uno.")
+            return
+        txt_path = os.path.join(
+            self.current_dir,
+            os.path.splitext(self.vid)[0] + ".txt"
+        )
+        if not os.path.exists(txt_path):
+            self.txt_part.setToolTip("File TXT non trovato sul disco.")
+            return
+        try:
+            with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = [l.rstrip() for l in f.readlines() if l.strip()]
+            preview = "\n".join(lines[:8])
+            if len(lines) > 8:
+                preview += f"\n... ({len(lines) - 8} righe in più)"
+            self.txt_part.setToolTip(preview)
+        except Exception:
+            self.txt_part.setToolTip("Impossibile leggere il file TXT.")
+
     def set_status(self, text: str, color: str):
         """Aggiorna i testi e decide i colori delle due metà della pillola con palette Soft."""
         # Estraiamo la parte della data
@@ -364,6 +390,22 @@ class VideoCard(QFrame):
             "border-top-left-radius: 0px; border-bottom-left-radius: 0px; "
             "border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
         )
+
+        # Tooltip pillola DATA
+        if "✅" in text and "Elaborato" in text:
+            self.date_part.setToolTip("✅ Video già elaborato\nClicca per modificare la data.")
+        elif "✅" in text and "manuale" in text.lower():
+            self.date_part.setToolTip("✅ Data inserita manualmente\nClicca per modificarla.")
+        elif "✅" in text:
+            self.date_part.setToolTip("✅ Data rilevata automaticamente dal nome file\nClicca per modificarla.")
+        elif "⚠️" in text and "MANCANTE" in text:
+            self.date_part.setToolTip("⚠️ Data non trovata nel nome file\nClicca per inserirla manualmente.")
+        elif "⚠️" in text:
+            self.date_part.setToolTip("⚠️ Data ambigua — potrebbe non essere corretta\nClicca per verificarla.")
+        elif "⛔" in text:
+            self.date_part.setToolTip("⛔ Data non valida\nClicca per correggerla.")
+        else:
+            self.date_part.setToolTip("Clicca per modificare la data.")
 
 # ══════════════════════════════════════════════════════════════════════════
 # FINESTRA IMPOSTAZIONI
@@ -459,6 +501,12 @@ class SettingsDialog(QDialog):
         cols.addLayout(col_dx)
         layout.addLayout(cols)
 
+        # Checkbox comportamento
+        self._auto_start = QCheckBox("▶  Avvia elaborazione automaticamente dopo import da YouTube")
+        self._auto_start.setChecked(settings.get("auto_start_after_yt", False))
+        self._auto_start.setToolTip("Se attivo, avvia subito l'elaborazione dopo aver importato un video da YouTube")
+        layout.addWidget(self._auto_start)
+
         # Bottoni
         btn_row = QHBoxLayout()
         btn_save  = QPushButton("💾 Salva")
@@ -481,7 +529,9 @@ class SettingsDialog(QDialog):
             e.setText(defs[k])
 
     def get_values(self) -> dict:
-        return {k: e.text() for k, e in self._entries.items()}
+        vals = {k: e.text() for k, e in self._entries.items()}
+        vals["auto_start_after_yt"] = self._auto_start.isChecked()
+        return vals
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -533,7 +583,7 @@ class DateEditorDialog(QDialog):
         self.date_input = QLineEdit()
         self.date_input.setInputMask("99-99-9999") 
         # Puliamo la data se contiene placeholder strani
-        clean_date = current_date if current_date and "-" in current_date else "01-01-2000"
+        clean_date = current_date if current_date and "-" in current_date else "01-01-1980"
         self.date_input.setText(clean_date)
         self.date_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.date_input.setStyleSheet("font-size: 14px; font-weight: bold; padding: 5px;")
@@ -547,15 +597,19 @@ class DateEditorDialog(QDialog):
         
         btn_layout = QHBoxLayout()
         btn_ok = QPushButton("Salva")
-        btn_ok.setObjectName("btn_save_date") # Per stile eventuale
-        btn_ok.clicked.connect(self.validate_and_accept) # <--- CAMBIATO QUI
-        
+        btn_ok.setObjectName("btn_save_date")
+        btn_ok.clicked.connect(self.validate_and_accept)
+        btn_ok.setDefault(True)  # Invio → Salva
+
         btn_cancel = QPushButton("Annulla")
         btn_cancel.clicked.connect(self.reject)
-        
-        btn_layout.addWidget(btn_cancel)
+
         btn_layout.addWidget(btn_ok)
+        btn_layout.addWidget(btn_cancel)
         layout.addLayout(btn_layout)
+
+        self.setModal(True)
+
 
     def validate_and_accept(self):
         """Controlla se la data esiste davvero prima di chiudere."""
@@ -629,8 +683,14 @@ class StoricoDialog(QDialog):
         except Exception:
             return
 
+        def _parse_date(entry):
+            try:
+                return datetime.strptime(entry.get("data_elaborazione", ""), "%d-%m-%Y %H:%M")
+            except Exception:
+                return datetime.min
+
         for vid, entry in sorted(storico.items(),
-                                  key=lambda x: x[1].get("data_elaborazione", ""),
+                                  key=lambda x: _parse_date(x[1]),
                                   reverse=True):
             row = self._table.rowCount()
             self._table.insertRow(row)
@@ -748,15 +808,17 @@ class BlackdetectDialog(QDialog):
 
         right.addWidget(self._editor, stretch=1)
 
-        # Bottoni salva/annulla
         btn_row = QHBoxLayout()
         btn_save   = QPushButton("💾 Salva TXT")
+        btn_open   = QPushButton("▶ Apri video")
         btn_cancel = QPushButton("Annulla")
         btn_save.setObjectName("btn_txt_save")
         btn_cancel.setObjectName("btn_dlg_cancel")
         btn_save.clicked.connect(self._save)
         btn_cancel.clicked.connect(self.reject)
+        btn_open.clicked.connect(self._open_video)
         btn_row.addWidget(btn_save)
+        btn_row.addWidget(btn_open)
         btn_row.addWidget(btn_cancel)
         btn_row.addStretch()
         right.addLayout(btn_row)
@@ -843,6 +905,18 @@ class BlackdetectDialog(QDialog):
         self._editor.setTextCursor(cursor)
         self._editor.setFocus()
 
+    def _open_video(self):
+        """Apre il video con il player predefinito del sistema."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(self.vid_path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", self.vid_path])
+            else:
+                subprocess.run(["xdg-open", self.vid_path])
+        except Exception as e:
+            QMessageBox.warning(self, "Errore", f"Impossibile aprire il video:\n{e}")
+
     def _save(self):
         """Salva il contenuto dell'editor nel file TXT."""
         txt = self._editor.toPlainText().strip()
@@ -881,13 +955,23 @@ class SpotCutterApp(QMainWindow):
         # 1. Inizializza lo STATO (Incluso il caricamento impostazioni)
         base_folder = os.path.dirname(os.path.abspath(__file__))
         # Usa la cartella Video di Windows come default, con fallback a Documenti
-        _home = os.path.expanduser("~")
-        _videos = os.path.join(_home, "Videos")
-        _docs   = os.path.join(_home, "Documents")
-        _base   = _videos if os.path.exists(_videos) else _docs if os.path.exists(_docs) else _home
-        default_path = os.path.join(_base, "Libreria Spot")
-        
-        self.settings_storage = QSettings("MioApp", "SpotOrganizer")
+        # Usa le API Windows per trovare la cartella Video reale
+        # anche se l'utente l'ha spostata in una partizione diversa
+        try:
+            import ctypes.wintypes
+            buf = ctypes.create_unicode_buffer(ctypes.wintypes.MAX_PATH)
+            ctypes.windll.shell32.SHGetFolderPathW(0, 0x000e, 0, 0, buf)
+            _videos = buf.value  # 0x000e = CSIDL_MYVIDEO
+            if not _videos or not os.path.exists(_videos):
+                raise ValueError
+        except Exception:
+            _home   = os.path.expanduser("~")
+            _videos = os.path.join(_home, "Videos")
+            if not os.path.exists(_videos):
+                _videos = os.path.join(_home, "Documents")
+        default_path = os.path.join(_videos, "Libreria Spot")
+
+        self.settings_storage = QSettings("SpotCutter", "SpotCutterUltra")
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
 
         self.state = {
@@ -932,6 +1016,61 @@ class SpotCutterApp(QMainWindow):
             except: pass
 
         QTimer.singleShot(800, self._startup_checks) 
+
+    def _on_save_session(self):
+        """Salva la coda corrente in un file JSON."""
+        if not self.state.get("queue_files"):
+            self._on_log("⚠️ Coda vuota — nulla da salvare.", "orange")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Salva sessione", 
+            os.path.join(self.state.get("current_dir", ""), "sessione.json"),
+            "File sessione (*.json)"
+        )
+        if not path:
+            return
+        try:
+            session = {
+                "current_dir": self.state.get("current_dir", ""),
+                "work_dir":    self.state.get("work_dir", ""),
+                "queue":       [
+                    {"vid": v, "txt": t, "manual_date": d}
+                    for v, t, d in self.state["queue_files"]
+                ]
+            }
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(session, f, indent=2, ensure_ascii=False)
+            self._on_log(f"💾 Sessione salvata: {os.path.basename(path)}", "green")
+        except Exception as e:
+            self._on_log(f"⚠️ Errore salvataggio sessione: {e}", "red")
+
+    def _on_load_session(self):
+        """Carica una sessione salvata da file JSON."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Carica sessione", "", "File sessione (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                session = json.load(f)
+            # Ripristina cartella sorgente e destinazione
+            current_dir = session.get("current_dir", "")
+            work_dir    = session.get("work_dir", "")
+            if current_dir and os.path.exists(current_dir):
+                self.state["current_dir"] = current_dir
+            if work_dir and os.path.exists(work_dir):
+                self.state["work_dir"] = work_dir
+                self.work_dir = work_dir
+            # Ripristina coda
+            self.state["queue_files"] = [
+                (item["vid"], item.get("txt"), item.get("manual_date"))
+                for item in session.get("queue", [])
+            ]
+            self.render_queue()
+            self._on_log(f"📂 Sessione caricata: {len(self.state['queue_files'])} video", "green")
+        except Exception as e:
+            self._on_log(f"⚠️ Errore caricamento sessione: {e}", "red")
 
     def _on_open_storico(self):
         """Apre il dialog dello storico elaborazioni."""
@@ -1225,6 +1364,17 @@ class SpotCutterApp(QMainWindow):
         
         self._main_stat_labels = {}
         # Definiamo le icone per ogni categoria
+        tooltips = {
+            "spot":        "Spot pubblicitari generici",
+            "promo":       "Promo e trailer di programmi TV",
+            "bumper":      "Bumper — brevi stacchetti tra gli spot",
+            "annunci":     "Annunci di palinsesto e comunicati",
+            "natale":      "Spot e contenuti festivi (Natale, Capodanno...)",
+            "cartelli":    "Cartelli e schermate fisse",
+            "videosigle":  "Sigle dei contenitori cinematografici TV\n(es. Lunedì Cinema, I Filmissimi, I Bellissimi...)",
+            "telegiornali":"Frammenti di telegiornale",
+        }
+
         cats = [
             ("spot", "📺 Spot"), ("promo", "📣 Promo"), ("bumper", "🎬 Bumper"),
             ("annunci", "🎤 Annunci"), ("natale", "🎄 Natale"),
@@ -1233,17 +1383,30 @@ class SpotCutterApp(QMainWindow):
         
         for key, label_text in cats:
             lbl = QLabel(f"{label_text}: 0")
-            lbl.setObjectName(f"lbl_stat_{key}") # ID specifico per colorarli nel QSS
-            if key == "promo":
-                lbl.setToolTip("Include automaticamente anche i Trailer")
-            if key == "natale":
-                lbl.setToolTip("Include automaticamente anche i contenuti natalizi")
+            lbl.setObjectName(f"lbl_stat_{key}")
+            lbl.setToolTip(tooltips.get(key, ""))
             stats_layout.addWidget(lbl)
-            stats_layout.addSpacing(15) # Spazio tra i badge
-            self._main_stat_labels[key] = lbl
             
         stats_layout.addStretch()
         layout.addWidget(stats_bar)
+
+        # Barra salva/carica sessione
+        session_bar = QHBoxLayout()
+        btn_save_session = QPushButton("💾 Salva sessione")
+        btn_load_session = QPushButton("📂 Carica sessione")
+        btn_save_session.setObjectName("btn_session")
+        btn_load_session.setObjectName("btn_session")
+        btn_save_session.setFixedHeight(28)
+        btn_load_session.setFixedHeight(28)
+        btn_save_session.clicked.connect(self._on_save_session)
+        btn_load_session.clicked.connect(self._on_load_session)
+        session_bar.addWidget(btn_save_session)
+        session_bar.addWidget(btn_load_session)
+        session_bar.addStretch()
+        layout.addLayout(session_bar)
+
+        # Area coda (scrollabile)
+        self._queue_scroll = QScrollArea()
 
         # Area coda (scrollabile)
         self._queue_scroll = QScrollArea()
@@ -1381,7 +1544,8 @@ class SpotCutterApp(QMainWindow):
                 idx=i, vid=vid, has_txt=has_txt,
                 status_text=st, status_color=sc,
                 is_first=(i == 0), is_last=(i == total - 1),
-                is_running=running)
+                is_running=running,
+                current_dir=self.state.get("current_dir", ""))
 
             card.sig_move_up.connect(self._move_item_up)
             card.sig_move_down.connect(self._move_item_down)
@@ -1657,8 +1821,8 @@ class SpotCutterApp(QMainWindow):
         # ------------------------------------------------
 
         # Logica standard per IMPORTA (Pillola Sinistra)
+        added_count = 0
         if result:
-            added_count = 0
             for vid, txt in result:
                 if any(item[0] == vid for item in self.state["queue_files"]):
                     self._on_log(f"⚠️ {vid} è già presente nella lista attuale.", "orange")
@@ -1676,6 +1840,11 @@ class SpotCutterApp(QMainWindow):
                 
         self._sync_buttons()
         self.render_queue()
+
+        # Avvio automatico dopo import YouTube se abilitato nelle impostazioni
+        _added = added_count if 'added_count' in dir() else 0
+        if self._s.get("auto_start_after_yt", False) and _added > 0:
+            self._on_run()
 
     # ══════════════════════════════════════════════════════════════════════
     # HANDLERS — Bottoni
@@ -1922,7 +2091,8 @@ class SpotCutterApp(QMainWindow):
                       vals["toll"], vals["bth"], vals["bdur"],
                       vals.get("parallel_cuts", "0"),
                       vals.get("silence_thresh", "-35dB"),
-                      vals.get("silence_dur", "0.1"))
+                      vals.get("silence_dur", "0.1"),
+                      vals.get("auto_start_after_yt", False))
         self._s = load_settings()
         self._on_log("✅ Impostazioni salvate.", "cyan")
 
