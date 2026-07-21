@@ -54,7 +54,8 @@ class VideoEngine:
         """
         self.log      = log_cb
         self.progress = progress_cb
-        self._current_proc = None
+        self._current_proc  = None
+        self._filename_lock = asyncio.Lock()  # protegge get_unique_filename dai tagli paralleli
         self._running = True   # verrà sincronizzato con state["running"]
 
         self.ytdlp_bin  = get_ytdlp_path()
@@ -265,21 +266,19 @@ class VideoEngine:
                 })
 
             # ── 5. TAGLIA IN BATCH PARALLELI ─────────────────────────────
-            # Il parallelismo qui è sicuro perché i tagli sono semplici copie
-            # di stream (nessuna ricodifica pesante): FFmpeg legge dal master
-            # già su disco e scrive file separati — nessuna race condition.
+            # I tagli sono semplici copie di stream (nessuna ricodifica):
+            # FFmpeg legge dal master su disco e scrive file separati.
+            # Nessuna race condition — ogni job scrive su file diverso.
             #
-            # Quanti tagli in parallelo?
-            # Usiamo metà dei core logici del sistema, con minimo 1 e massimo 6.
-            # Metà perché FFmpeg usa già internamente più thread, e vogliamo
-            # lasciare risorse libere al resto del sistema.
+            # Parallelismo adattivo: metà core logici, min 1, max 12.
             # Esempi:
+            #   i5-8259U (4 core /  8 thread) → 4 tagli paralleli
             #   i5-8400  (6 core /  6 thread) → 3 tagli paralleli
-            #   5900X    (12 core / 24 thread) → 6 tagli paralleli  (cap 6)
-            #   i3-8100  (4 core /  4 thread) → 2 tagli paralleli
+            #   5900X    (12 core / 24 thread) → 12 tagli paralleli
+            # Il cap a 12 evita saturazione disco su HDD — su NVMe si può alzare.
+            # Configurabile manualmente nelle impostazioni (0 = automatico).
             logical_cores = os.cpu_count() or 2
-            # Se l'utente ha impostato un valore manuale nelle impostazioni lo usa,
-            # altrimenti calcola automaticamente: metà core, min 1, max 12
+            # Valore manuale dalle impostazioni oppure calcolo automatico
             manual_cap = int(state.get("parallel_cuts", 0))
             if manual_cap > 0:
                 parallel_cuts = manual_cap
@@ -332,13 +331,32 @@ class VideoEngine:
                 active_procs = []
 
                 async def _run_one(job):
-                    """Esegue un singolo taglio e ritorna (job, esito)."""
+                    """Esegue un singolo taglio e ritorna (job, esito, tempo)."""
+                    await self.log(
+                        f"⚙️ Avvio taglio {job['idx_spot']}/{total_jobs}: "
+                        f"{os.path.basename(job['out_f'])}",
+                        "grey"
+                    )
+                    t_start = time.time()
                     ok = await self._cut_segment(
                         master, job["r_s"], job["r_e"],
                         v_crf, job["out_f"], state, c_flags,
                         proc_list=active_procs
                     )
-                    return job, ok
+                    elapsed = round(time.time() - t_start, 1)
+                    if ok and state["running"]:
+                        await self.log(
+                            f"✅ Tagliato {job['idx_spot']}/{total_jobs}: "
+                            f"{os.path.basename(job['out_f'])} ({elapsed}s)",
+                            job["l_col"]
+                        )
+                    elif not ok:
+                        await self.log(
+                            f"❌ Fallito {job['idx_spot']}/{total_jobs}: "
+                            f"{os.path.basename(job['out_f'])}",
+                            "red"
+                        )
+                    return job, ok, elapsed
 
                 results = await asyncio.gather(
                     *[_run_one(j) for j in batch],
@@ -352,17 +370,12 @@ class VideoEngine:
                     cut_times.append(batch_elapsed)
 
                 # Processa i risultati nell'ordine in cui erano nella lista
-                for job, ok_cut in results:
+                for job, ok_cut, elapsed in results:
                     done_count += 1
                     if ok_cut and state["running"]:
                         tagli_riusciti += 1
                         state["stats_counts"].setdefault(job["k"], 0)
                         state["stats_counts"][job["k"]] += 1
-                        await self.log(
-                            f"Tagliato {job['idx_spot']}/{total_jobs}: "
-                            f"{os.path.basename(job['out_f'])}",
-                            job["l_col"]
-                        )
                         if "update_stats_cb" in state and state["update_stats_cb"]:
                             await state["update_stats_cb"]()
 
@@ -636,6 +649,14 @@ class VideoEngine:
                    usata dai tagli paralleli per killarli tutti su Stop.
         Ritorna True se riuscito.
         """
+        # Rigenera il nome file sotto lock per evitare duplicati tra tagli paralleli
+        async with self._filename_lock:
+            out_dir  = os.path.dirname(out_f)
+            out_base = os.path.splitext(os.path.basename(out_f))[0]
+            # Rimuove eventuale suffisso " (N)" già aggiunto in fase di preparazione
+            out_base = re.sub(r' \(\d+\)$', '', out_base)
+            out_f    = get_unique_filename(out_dir, out_base, ext=".mkv")
+
         cmd = [
             get_tool_path('ffmpeg'), '-y', '-i', master,
             '-ss', f"{r_s:.2f}",

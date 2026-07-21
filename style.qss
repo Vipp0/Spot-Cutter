@@ -462,7 +462,8 @@ QScrollBar::handle:vertical {
 }
 QScrollBar::handle:vertical:hover { background: #A8A8A8; }
 QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::sub-line:vertical { height: 0; border: none; background: none; }
+QScrollBar::up-arrow:vertical, QScrollBar::down-arrow:vertical { border: none; background: none; image: none; }
 
 QScrollBar:horizontal {
     border: none;
@@ -475,7 +476,8 @@ QScrollBar::handle:horizontal {
 }
 QScrollBar::handle:horizontal:hover { background: #A8A8A8; }
 QScrollBar::add-line:horizontal,
-QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::sub-line:horizontal { width: 0; border: none; background: none; }
+QScrollBar::left-arrow:horizontal, QScrollBar::right-arrow:horizontal { border: none; background: none; image: none; }
 
 /* ── DIALOGHI ───────────────────────────────────────────────────────────── */
 QDialog {
@@ -560,6 +562,37 @@ QTextEdit#txt_editor:focus {
 }
 
 /* ── BOTTONI SESSIONE ───────────────────────────────────────────────────── */
+QPushButton#btn_pill_left {
+    background-color: #FFFFFF;
+    border: 1.5px solid #B0B8C4;
+    border-right: none;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+    color: #1a1a1a;
+    font-size: 14px;
+    padding: 0;
+}
+QPushButton#btn_pill_left:hover {
+    background-color: #E0E4EA;
+}
+
+QPushButton#btn_pill_right {
+    background-color: #FFFFFF;
+    border: 1.5px solid #B0B8C4;
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    color: #1a1a1a;
+    font-size: 14px;
+    padding: 0;
+}
+QPushButton#btn_pill_right:hover {
+    background-color: #E0E4EA;
+}
+
 QPushButton#btn_session {
     background-color: #FFFFFF;
     border: 1.5px solid #B0B8C4;
@@ -579,4 +612,43 @@ QPushButton#btn_session:disabled {
     background-color: #EBEBEB;
     color: #AAAAAA;
     border-color: #E0E0E0;
+}
+QLabel#lbl_duration {
+    color: #606060;
+    font-size: 11px;
+    font-family: 'Segoe UI';
+    padding: 0 4px;
+}
+QPushButton#btn_expand_log {
+    background-color: transparent;
+    border: none;
+    color: #707070;
+    font-size: 14px;
+    border-radius: 4px;
+}
+QPushButton#btn_expand_log:hover {
+    background-color: #E0E4EA;
+    color: #1a1a1a;
+}
+QPushButton#btn_expand_log:disabled {
+    background-color: transparent;
+    color: #AAAAAA;
+}
+QPushButton#btn_sort {
+    background-color: #F0F2F5;
+    border: 1px solid #D0D0D0;
+    color: #505050;
+    font-size: 11px;
+    font-family: 'Segoe UI';
+    border-radius: 4px;
+    padding: 0 8px;
+}
+QPushButton#btn_sort:hover {
+    background-color: #E0E4EA;
+    color: #1a1a1a;
+}
+QPushButton#btn_sort:checked {
+    background-color: #0063B1;
+    color: white;
+    border-color: #004E8C;
 }

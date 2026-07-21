@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox
 )
 from PySide6.QtCore import (
-    Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings
+    Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings,
+    QPropertyAnimation, QEasingCurve
 )
 from PySide6.QtGui import (
     QFont, QColor, QPalette, QIcon, QTextCursor, QPixmap
@@ -944,6 +945,7 @@ class SpotCutterApp(QMainWindow):
     _sig_render_queue    = Signal()
     _sig_yt_finished     = Signal(list)
     _sig_yt_info         = Signal(str, object)
+    _sig_duration        = Signal(float, int)
 
     def __init__(self):
         super().__init__()
@@ -1005,10 +1007,13 @@ class SpotCutterApp(QMainWindow):
         self._sig_render_queue.connect(self.render_queue)
         self._sig_yt_finished.connect(self._on_yt_finished)
         self._sig_yt_info.connect(self._yt_after_info) # Aggiunto qui
+        self._sig_duration.connect(self._on_duration_ready)
 
         # 5. Threading
         self._worker_thread = None
-        self._yt_thread     = None 
+        self._yt_thread     = None
+        self._sort_key      = ""
+        self._sort_asc      = True
 
         # 6. Check iniziali
         if not os.path.exists(self.work_dir):
@@ -1016,6 +1021,97 @@ class SpotCutterApp(QMainWindow):
             except: pass
 
         QTimer.singleShot(800, self._startup_checks) 
+
+    def _update_duration_label(self):
+        """Calcola in background la durata totale dei video in coda."""
+        queue = self.state.get("queue_files", [])
+        current_dir = self.state.get("current_dir", "")
+        if not queue:
+            self._lbl_duration.setText("—")
+            return
+        self._lbl_duration.setText("calcolo...")
+
+        def _worker():
+            total = 0.0
+            for vid, _, _ in queue:
+                path = os.path.join(current_dir, vid)
+                total += get_video_duration(path)
+            # Torna sul thread UI via segnale
+            self._sig_duration.emit(total, len(queue))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_duration_ready(self, total: float, count: int):
+        """Aggiorna il label durata sul thread UI."""
+        h  = int(total) // 3600
+        m  = (int(total) % 3600) // 60
+        if h > 0:
+            self._lbl_duration.setText(f"{count} video · {h}h {m:02d}m")
+        else:
+            self._lbl_duration.setText(f"{count} video · {m}m")
+
+    def _on_expand_log(self, checked: bool):
+        """Espande o riduce il log con animazione."""
+        self._log.setMaximumHeight(16777215)  # rimuove il limite fisso durante l'animazione
+        anim = QPropertyAnimation(self._log, b"maximumHeight")
+        anim.setDuration(200)
+        anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        if checked:
+            anim.setStartValue(130)
+            anim.setEndValue(400)
+        else:
+            anim.setStartValue(400)
+            anim.setEndValue(130)
+        anim.finished.connect(lambda: self._log.setFixedHeight(400 if checked else 130))
+        anim.start()
+        self._anim_log = anim  # mantieni riferimento per evitare garbage collection
+
+    def _on_sort(self, key: str):
+        """Ordina la coda per la chiave selezionata."""
+        if self._sort_key == key:
+            self._sort_asc = not self._sort_asc  # inverte direzione
+        else:
+            self._sort_key = key
+            self._sort_asc = True
+
+        # Aggiorna aspetto bottoni
+        for k in ["nome", "data", "stato"]:
+            btn = getattr(self, f"_btn_sort_{k}", None)
+            if btn:
+                btn.setChecked(k == self._sort_key)
+                if k == self._sort_key:
+                    arrow = " ↑" if self._sort_asc else " ↓"
+                    btn.setText(k.capitalize() + arrow)
+                else:
+                    btn.setText(k.capitalize())
+
+        # Ordina queue_files
+        queue = self.state.get("queue_files", [])
+        if not queue:
+            return
+
+        if key == "nome":
+            queue.sort(key=lambda x: x[0].lower(), reverse=not self._sort_asc)
+        elif key == "data":
+            def _date_key(item):
+                from utils import extract_date_info
+                _, anno, _ = extract_date_info(item[0])
+                # Usa data manuale se presente
+                if item[2]:
+                    return item[2]
+                return anno
+            queue.sort(key=_date_key, reverse=not self._sort_asc)
+        elif key == "stato":
+            # Ordine: NO TXT prima, poi data ambigua, poi ok
+            def _stato_key(item):
+                has_txt = item[1] is not None
+                if not has_txt:
+                    return 0
+                return 1
+            queue.sort(key=_stato_key, reverse=not self._sort_asc)
+
+        self.state["queue_files"] = queue
+        self.render_queue()
 
     def _on_save_session(self):
         """Salva la coda corrente in un file JSON."""
@@ -1386,27 +1482,69 @@ class SpotCutterApp(QMainWindow):
             lbl.setObjectName(f"lbl_stat_{key}")
             lbl.setToolTip(tooltips.get(key, ""))
             stats_layout.addWidget(lbl)
+            self._main_stat_labels[key] = lbl
             
         stats_layout.addStretch()
         layout.addWidget(stats_bar)
 
-        # Barra salva/carica sessione
-        session_bar = QHBoxLayout()
-        btn_save_session = QPushButton("💾 Salva sessione")
-        btn_load_session = QPushButton("📂 Carica sessione")
-        btn_save_session.setObjectName("btn_session")
-        btn_load_session.setObjectName("btn_session")
-        btn_save_session.setFixedHeight(28)
-        btn_load_session.setFixedHeight(28)
+# Barra unificata: sessione + ordinamento + durata
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        # Etichetta SESSIONE
+        lbl_sessione = QLabel("SESSIONE")
+        lbl_sessione.setObjectName("lbl_section")
+        toolbar.addWidget(lbl_sessione)
+
+        # Pillola doppia salva/carica
+        btn_save_session = QPushButton("💾")
+        btn_load_session = QPushButton("📂")
+        btn_save_session.setObjectName("btn_pill_left")
+        btn_load_session.setObjectName("btn_pill_right")
+        btn_save_session.setFixedSize(32, 28)
+        btn_load_session.setFixedSize(32, 28)
+        btn_save_session.setToolTip("Salva sessione")
+        btn_load_session.setToolTip("Carica sessione")
         btn_save_session.clicked.connect(self._on_save_session)
         btn_load_session.clicked.connect(self._on_load_session)
-        session_bar.addWidget(btn_save_session)
-        session_bar.addWidget(btn_load_session)
-        session_bar.addStretch()
-        layout.addLayout(session_bar)
+        pill = QHBoxLayout()
+        pill.setSpacing(0)
+        pill.setContentsMargins(0, 0, 0, 0)
+        pill.addWidget(btn_save_session)
+        pill.addWidget(btn_load_session)
+        toolbar.addLayout(pill)
 
-        # Area coda (scrollabile)
-        self._queue_scroll = QScrollArea()
+        # Separatore verticale
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setObjectName("separator")
+        toolbar.addWidget(sep)
+
+        # Ordinamento
+        lbl_sort = QLabel("Ordina:")
+        lbl_sort.setObjectName("lbl_duration")
+        toolbar.addWidget(lbl_sort)
+        for key, label in [("nome", "Nome"), ("data", "Data"), ("stato", "Stato")]:
+            btn = QPushButton(label)
+            btn.setObjectName("btn_sort")
+            btn.setFixedHeight(28)
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked, k=key: self._on_sort(k))
+            setattr(self, f"_btn_sort_{key}", btn)
+            toolbar.addWidget(btn)
+
+        toolbar.addStretch()
+
+        # Durata totale a destra
+        lbl_duration_title = QLabel("Durata totale:")
+        lbl_duration_title.setObjectName("lbl_duration")
+        self._lbl_duration = QLabel("—")
+        self._lbl_duration.setObjectName("lbl_duration")
+        self._lbl_duration.setToolTip("Durata totale dei video in coda")
+        toolbar.addWidget(lbl_duration_title)
+        toolbar.addWidget(self._lbl_duration)
+
+        layout.addLayout(toolbar)
 
         # Area coda (scrollabile)
         self._queue_scroll = QScrollArea()
@@ -1449,7 +1587,21 @@ class SpotCutterApp(QMainWindow):
         self._pb_global.setTextVisible(False)
         layout.addWidget(self._pb_global)
 
-        # Log console
+        # Log console con bottone espandi
+        log_header = QHBoxLayout()
+        lbl_log = QLabel("Log")
+        lbl_log.setObjectName("lbl_progress")
+        btn_expand_log = QPushButton("⛶")
+        btn_expand_log.setObjectName("btn_expand_log")
+        btn_expand_log.setFixedSize(22, 22)
+        btn_expand_log.setToolTip("Espandi/riduci log")
+        btn_expand_log.setCheckable(True)
+        btn_expand_log.clicked.connect(self._on_expand_log)
+        log_header.addWidget(lbl_log)
+        log_header.addStretch()
+        log_header.addWidget(btn_expand_log)
+        layout.addLayout(log_header)
+
         self._log = QTextEdit()
         self._log.setObjectName("log_box")
         self._log.setReadOnly(True)
@@ -1484,6 +1636,7 @@ class SpotCutterApp(QMainWindow):
             empty.setObjectName("lbl_empty_queue")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._queue_layout.insertWidget(0, empty)
+            self._lbl_duration.setText("—")
             self._sync_buttons()
             return
 
@@ -1558,6 +1711,7 @@ class SpotCutterApp(QMainWindow):
             self.state["status_labels"][i] = card
 
         self._sync_buttons()
+        self._update_duration_label()
 
     def _sync_buttons(self):
         """Disabilita AVVIA se ci sono errori (TXT mancanti o date invalide)."""
@@ -1739,8 +1893,6 @@ class SpotCutterApp(QMainWindow):
         
         if msg_box.clickedButton() == btn_open:
             self._open_output_folder()
-        elif msg_box.clickedButton() == btn_ok:
-            self.close()
 
 
     def _open_output_folder(self, path: str = ""):
