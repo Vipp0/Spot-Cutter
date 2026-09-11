@@ -826,7 +826,7 @@ class VideoEngine:
 
     # ── DOWNLOAD YOUTUBE ──────────────────────────────────────────────────
     async def download_youtube(self, url: str, output_dir: str, state: dict,
-                               generate_txt: bool = True) -> list[tuple[str, str]] | None:
+                               generate_txt: bool = True) -> list[tuple[str, str | None]] | None:
         """
         Scarica tramite yt-dlp.exe esterno.
         Strategia: snapshot file prima/dopo per trovare cosa è stato scaricato.
@@ -973,6 +973,7 @@ class VideoEngine:
                         tf.write("\n".join(txt_lines))
                 elif generate_txt:
                     await self.log("ℹ️ Nessun timestamp nella descrizione — TXT non generato.", "orange")
+                    txt_basename = None
             else:
                 if os.path.exists(desc_path):
                     try: os.remove(desc_path)

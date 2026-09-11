@@ -1641,7 +1641,11 @@ class SpotCutterApp(QMainWindow):
             return
 
         for i, (vid, txt, manual_date) in enumerate(queue):
-            has_txt = txt is not None
+            has_txt = False
+            if txt is not None:
+                txt_path = os.path.join(self.state.get("current_dir", ""), txt)
+                if os.path.exists(txt_path) and os.path.getsize(txt_path) > 0:
+                    has_txt = True
             
             # 1. Recuperiamo info sulla data
             ext_date, _, auto_color = extract_date_info(vid)
