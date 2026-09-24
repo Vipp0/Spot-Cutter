@@ -23,7 +23,7 @@ def get_ytdlp_path() -> str:
 # Importa le utility condivise
 from utils import (
     get_seconds, get_unique_filename, get_video_duration,
-    safe_kill_process, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
+    safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
     get_tool_path
 )
 
@@ -880,10 +880,14 @@ class VideoEngine:
                     return
                 buf = b""
                 while True:
-                    chunk = await process.stdout.read(256)
-                    if not chunk:
-                        break
                     if not state.get("running", True):
+                        break
+                    # Timeout: lo Stop deve funzionare anche se yt-dlp resta in silenzio
+                    try:
+                        chunk = await asyncio.wait_for(process.stdout.read(256), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    if not chunk:
                         break
                     buf += chunk
                     # Splitta su \r e \n — yt-dlp usa \r per sovrascrivere la riga
@@ -913,6 +917,8 @@ class VideoEngine:
                                 break
 
             await _read_progress()
+            if not state.get("running", True):
+                await kill_process_tree(process)
             await process.wait()
             self._current_proc = None
 

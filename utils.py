@@ -65,6 +65,19 @@ async def safe_kill_process(proc, timeout=2):
                 await proc.wait()
     except Exception: pass
 
+async def kill_process_tree(proc, timeout=5):
+    """Chiude il processo e i suoi figli (yt-dlp.exe lancia un sottoprocesso e ffmpeg)."""
+    if proc is None or proc.returncode is not None: return
+    if sys.platform == "win32":
+        try:
+            killer = await asyncio.create_subprocess_exec(
+                "taskkill", "/F", "/T", "/PID", str(proc.pid),
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW)
+            await killer.wait()
+        except Exception: pass
+    await safe_kill_process(proc, timeout)
+
 def get_seconds(time_str):
     try:
         parts = list(map(float, str(time_str).replace(',', '.').split(':')))
