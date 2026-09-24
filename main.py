@@ -469,7 +469,9 @@ class SettingsDialog(QDialog):
         ]))
         col_sx.addWidget(_group("⬛  BLACKDETECT", [
             ("Sensibilità Nero",     "bth",
-             "Soglia di luminosità per considerare un frame nero (0-1). Default: 0.1"),
+             "Soglia di luminosità per considerare un frame nero (0-1). Default: 0.1\n"
+             "Se in uno stacco non trova un nero, il programma riprova da solo\n"
+             "con +0.05 e +0.10 (neri 'grigi' delle registrazioni VHS)."),
             ("Durata Min. Nero (s)", "bdur",
              "Durata minima in secondi per considerare una sequenza come nero. Default: 0.1"),
         ]))
@@ -488,13 +490,7 @@ class SettingsDialog(QDialog):
             ("Cuscinetto Fine (s)",   "cusc_f",
              "Ritardo in secondi rispetto al punto di taglio finale. Default: 0.12"),
             ("Tolleranza Nero (s)",   "toll",
-             "Distanza massima in secondi tra il timestamp TXT e il nero rilevato. Default: 2.0"),
-        ]))
-        col_dx.addWidget(_group("🔇  SILENCEDETECT", [
-            ("Soglia Silenzio (dB)",     "silence_thresh",
-             "Livello audio sotto cui si considera silenzio. Es: -35dB. Default: -35dB"),
-            ("Durata Min. Silenzio (s)", "silence_dur",
-             "Durata minima in secondi per considerare un tratto come silenzio. Default: 0.1"),
+             "Distanza massima in secondi tra il timestamp TXT e la fine del nero. Default: 2.0"),
         ]))
         col_dx.addStretch()
 
@@ -524,8 +520,7 @@ class SettingsDialog(QDialog):
     def _reset(self):
         defs = {"crf": "20", "cusc_i": "0.05", "cusc_f": "0.12",
                 "toll": "2.0", "bth": "0.1", "bdur": "0.1",
-                "parallel_cuts": "0", "silence_thresh": "-35dB",
-                "silence_dur": "0.1"}
+                "parallel_cuts": "0"}
         for k, e in self._entries.items():
             e.setText(defs[k])
 
@@ -2098,8 +2093,6 @@ class SpotCutterApp(QMainWindow):
         self.state["running"] = True
         self.state["stats_counts"] = {k: 0 for k in self.state["stats_counts"]}
         self.state["parallel_cuts"] = int(self._s.get("parallel_cuts", 0))
-        self.state["silence_thresh"] = self._s.get("silence_thresh", "-35dB")
-        self.state["silence_dur"] = self._s.get("silence_dur", "0.1")
         self._sync_buttons()
 
         # Crea worker e thread
@@ -2246,8 +2239,6 @@ class SpotCutterApp(QMainWindow):
         save_settings(vals["crf"], vals["cusc_i"], vals["cusc_f"],
                       vals["toll"], vals["bth"], vals["bdur"],
                       vals.get("parallel_cuts", "0"),
-                      vals.get("silence_thresh", "-35dB"),
-                      vals.get("silence_dur", "0.1"),
                       vals.get("auto_start_after_yt", False))
         self._s = load_settings()
         self._on_log("✅ Impostazioni salvate.", "cyan")

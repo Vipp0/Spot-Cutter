@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import time
 import json
+import statistics
 from typing import Callable, Awaitable, Any, cast
 
 def get_ytdlp_path() -> str:
@@ -188,12 +189,12 @@ class VideoEngine:
                     await status_cb(idx, "🛑 Interrotto", "orange")
                 break
 
-            # ── 2. BLACKDETECT ────────────────────────────────────────────
-            b_starts, b_ends, s_starts, s_ends = await self._detect_blacks(
-                master, v_bth, v_bdur, c_flags,
-                silence_thresh=state.get("silence_thresh", "-35dB"),
-                silence_dur=state.get("silence_dur", "0.1")
-            )
+            # ── 2. RICERCA NERI (tre sensibilità, un solo passaggio) ──────
+            neri = await self._detect_blacks(master, v_bth, v_bdur, duration, state, c_flags)
+            if neri is None:
+                if status_cb:
+                    await status_cb(idx, "🛑 Interrotto", "orange")
+                break
 
             # ── 3. LEGGI SPOT DAL TXT ─────────────────────────────────────
             # NEW: Costruiamo il percorso assoluto usando la cartella corrente
@@ -206,6 +207,32 @@ class VideoEngine:
                 continue
             await self.log(f"✅ Trovati {len(spot_list)} segmenti in {txt}.", "white")
 
+            # ── 3b. SCEGLI IL NERO DI OGNI STACCO ─────────────────────────
+            # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
+            # e apre quello successivo (fine nero - cuscinetto inizio).
+            timestamps = [s["t"] for s in spot_list]
+            scelte, scarto, n_campioni = self._choose_blacks(timestamps, neri, v_toll)
+            if n_campioni >= 3:
+                await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
+                               f"(misurato su {n_campioni} stacchi).", "grey")
+            punti = []          # per ogni timestamp: (fine clip precedente, inizio clip)
+            da_verificare = 0
+            for j, (t, scelta) in enumerate(zip(timestamps, scelte), 1):
+                mmss = f"{int(t) // 60:02d}:{int(t) % 60:02d}"
+                if scelta:
+                    b_s, b_e, sens = scelta
+                    await self.log(f"Stacco {j} ({mmss}): nero {b_s:.2f}-{b_e:.2f}s "
+                                   f"(sensibilità {sens})", "grey")
+                    punti.append((b_s + v_cusc_f, max(0.0, b_e - v_cusc_i)))
+                elif j == 1:
+                    punti.append((None, max(0.0, t - v_cusc_i)))
+                else:
+                    p = t + scarto
+                    da_verificare += 1
+                    await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero trovato, "
+                                   f"taglio stimato a {p:.2f}s — da verificare", "orange")
+                    punti.append((p, p))
+
             # ── 4. CALCOLA TUTTI I JOB DI TAGLIO ─────────────────────────
             # Prima costruiamo la lista completa dei job (tempi + nomi + path)
             # senza eseguire ancora nulla. Questo ci permette di lanciare
@@ -214,30 +241,13 @@ class VideoEngine:
             results  = []
             tagli_riusciti = 0
             for i, spot in enumerate(spot_list, 1):
-                t_s    = spot["t"]
                 name_r = spot["n"]
                 name_c = re.sub(r'[\\/*?:"<>|]', "", name_r)
                 name_c = "Sconosciuto" if not name_c else name_c[:100]
 
-                near_s = min(b_ends, key=lambda x: abs(x - t_s)) if b_ends else t_s
-                # Silencedetect: se c'è un silenzio vicino al nero, affina il punto di inizio
-                if s_ends:
-                    near_s_sil = min(s_ends, key=lambda x: abs(x - t_s))
-                    if abs(near_s_sil - t_s) <= v_toll and abs(near_s_sil - near_s) <= v_toll:
-                        near_s = (near_s + near_s_sil) / 2  # media tra nero e silenzio
-                r_s    = (max(0.0, near_s - v_cusc_i)
-                          if abs(near_s - t_s) <= v_toll
-                          else max(0.0, t_s - v_cusc_i))
-
+                r_s = punti[i - 1][1]
                 if i < len(spot_list):
-                    t_e_t  = spot_list[i]["t"]
-                    near_e = min(b_starts, key=lambda x: abs(x - t_e_t)) if b_starts else t_e_t
-                    # Silencedetect: se c'è un silenzio vicino al nero, affina il punto di fine
-                    if s_starts:
-                        near_e_sil = min(s_starts, key=lambda x: abs(x - t_e_t))
-                        if abs(near_e_sil - t_e_t) <= v_toll and abs(near_e_sil - near_e) <= v_toll:
-                            near_e = (near_e + near_e_sil) / 2  # media tra nero e silenzio
-                    r_e    = near_e + v_cusc_f if abs(near_e - t_e_t) <= v_toll else t_e_t
+                    r_e = punti[i][0]
                 else:
                     if duration and duration > r_s:
                         r_e = duration
@@ -427,6 +437,18 @@ class VideoEngine:
                             f"  ⚠️ {os.path.basename(video_path_completo)} — "
                             f"{tagli_riusciti}/{len(cut_jobs)} tagli"
                         )
+                    elif da_verificare:
+                        avviso = f"{da_verificare} stacc{'o' if da_verificare == 1 else 'hi'} senza nero, da verificare"
+                        if status_cb:
+                            await status_cb(idx, f"⚠️ {avviso}", "#FF9500")
+                        await self.log(
+                            f"⚠️ {os.path.basename(video_path_completo)} elaborato "
+                            f"({tagli_riusciti} tagli) — {avviso}.", "orange"
+                        )
+                        session_log.append(
+                            f"  ⚠️ {os.path.basename(video_path_completo)} — "
+                            f"{tagli_riusciti} tagli, {avviso}"
+                        )
                     else:
                         if status_cb:
                             await status_cb(idx, "✅ Completato", "#4CAF50")
@@ -592,37 +614,98 @@ class VideoEngine:
             await self.log(f"⚠️ Errore blackdetect standalone: {e}", "red")
             return []
 
-    # ── BLACKDETECT ───────────────────────────────────────────────────────
-    async def _detect_blacks(self, master, bth, bdur, c_flags,
-                             silence_thresh="-35dB", silence_dur="0.1") -> tuple:
+    # ── BLACKDETECT A PIÙ SENSIBILITÀ ─────────────────────────────────────
+    async def _detect_blacks(self, master, bth, bdur, duration, state, c_flags) -> dict | None:
         """
-        Analizza il master con blackdetect + silencedetect in un unico passaggio.
-        Ritorna (b_starts, b_ends, s_starts, s_ends) come liste di float.
-        s_starts/s_ends sono i punti di silenzio audio rilevati.
+        Un solo passaggio sul master con blackdetect a tre sensibilità (bth, +0.05, +0.10):
+        il nero delle registrazioni VHS cambia anche dentro lo stesso video.
+        Ritorna {sensibilità: [(black_start, black_end), ...]}, None se interrotto.
         """
-        await self.log("Ricerca stacchi neri e silenzi...", "grey")
-        cmd = [get_tool_path('ffmpeg'), '-y', '-i', master,
-               '-vf', f"blackdetect=d={bdur}:pix_th={bth}",
-               '-af', f"silencedetect=n={silence_thresh}:d={silence_dur}",
-               '-f', 'null', '-']
+        levels = [round(float(bth) + k * 0.05, 2) for k in range(3)]
+        n = len(levels)
+        graph = (f"[0:v]split={n}" + "".join(f"[s{i}]" for i in range(n)) + ";"
+                 + ";".join(f"[s{i}]blackdetect=d={bdur}:pix_th={th}[o{i}]"
+                            for i, th in enumerate(levels)))
+        maps = [a for i in range(n) for a in ("-map", f"[o{i}]")]
+        cmd = [get_tool_path('ffmpeg'), '-y', '-stats', '-i', master,
+               '-filter_complex', graph, *maps, '-f', 'null', '-']
+        # Nel grafo il filtro 0 è lo split, quindi il blackdetect i-esimo è Parsed_blackdetect_{i+1}
+        names = {f"Parsed_blackdetect_{i + 1}": th for i, th in enumerate(levels)}
+        found = {th: [] for th in levels}
+        rx = re.compile(r"(Parsed_blackdetect_\d+) @ [^\]]*\] black_start:\s*([\d.]+) black_end:\s*([\d.]+)")
+
+        await self.log(f"Ricerca neri (sensibilità {', '.join(map(str, levels))})...", "grey")
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
-                stdout=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=c_flags
             )
-            _, stderr_b = await proc.communicate()
-            out = stderr_b.decode(errors='ignore')
-            b_starts = [float(x) for x in re.findall(r"black_start:([\d.]+)", out)]
-            b_ends   = [float(x) for x in re.findall(r"black_end:([\d.]+)",   out)]
-            s_starts = [float(x) for x in re.findall(r"silence_start:([\d.]+)", out)]
-            s_ends   = [float(x) for x in re.findall(r"silence_end\s*:\s*([\d.]+)", out)]
-            await self.log(f"Trovati {len(b_starts)} neri, {len(s_starts)} silenzi.", "grey")
-            return b_starts, b_ends, s_starts, s_ends
+            self._current_proc = proc
+            buf = ""
+            while True:
+                if not state["running"]:
+                    await safe_kill_process(proc)
+                    self._current_proc = None
+                    return None
+                try:
+                    chunk = await asyncio.wait_for(proc.stderr.read(4096), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                if not chunk:
+                    break
+                buf += chunk.decode(errors="ignore")
+                *lines, buf = re.split(r"[\r\n]", buf)
+                for line in lines:
+                    if m := rx.search(line):
+                        if m.group(1) in names:
+                            found[names[m.group(1)]].append((float(m.group(2)), float(m.group(3))))
+                    elif duration > 0 and (tm := re.search(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})", line)):
+                        perc = min(0.99, get_seconds(tm.group(1)) / duration)
+                        await self.progress(perc, f"Ricerca neri: {int(perc * 100)}%")
+            await proc.wait()
+            self._current_proc = None
+            if proc.returncode != 0:
+                await self.log(f"⚠️ Ricerca neri terminata con errore (codice {proc.returncode})", "red")
+            await self.log("Neri trovati: " + ", ".join(
+                f"{len(v)} a sensibilità {th}" for th, v in found.items()), "grey")
+            return found
         except Exception as e:
-            await self.log(f"⚠️ Errore analisi: {e}", "red")
-            return [], [], [], []
+            self._current_proc = None
+            await self.log(f"⚠️ Errore ricerca neri: {e}", "red")
+            return {th: [] for th in levels}
+
+    @staticmethod
+    def _choose_blacks(timestamps: list, neri: dict, toll: float) -> tuple:
+        """
+        Sceglie il nero di ogni stacco (uno per timestamp del txt).
+        - candidati: neri che finiscono entro ±toll dal timestamp
+        - sensibilità: la più severa che trova almeno un candidato
+        - scarto: i timestamp di uno stesso video hanno di solito un anticipo costante
+          (mdeplo: ~+0.8s). Lo si misura sugli stacchi con un solo nero candidato e,
+          se i candidati sono più d'uno, si sceglie quello più vicino a timestamp + scarto.
+        Ritorna (scelte, scarto, n_campioni); scelte[i] = (black_start, black_end, sens) o None.
+        """
+        levels = sorted(neri)
+
+        def candidati(t, th):
+            return [b for b in neri[th] if abs(b[1] - t) <= toll]
+
+        campioni = [c[0][1] - t for t in timestamps if len(c := candidati(t, levels[0])) == 1]
+        scarto = statistics.median(campioni) if len(campioni) >= 3 else 0.0
+
+        scelte = []
+        for t in timestamps:
+            scelta = None
+            for th in levels:
+                c = candidati(t, th)
+                if c:
+                    b = min(c, key=lambda x: abs(x[1] - (t + scarto)))
+                    scelta = (b[0], b[1], th)
+                    break
+            scelte.append(scelta)
+        return scelte, scarto, len(campioni)
 
     # ── LETTURA TXT ───────────────────────────────────────────────────────
     def _read_spot_list(self, txt_path) -> list | None:
