@@ -635,7 +635,7 @@ class VideoEngine:
             spot_list = []
             with open(txt_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    if mm := re.search(r"(\d{2}:\d{2}(?::\d{2})?)\s*-\s*(.+)", line):
+                    if mm := re.search(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(.+)", line):
                         spot_list.append({
                             "t": get_seconds(mm.group(1)),
                             "n": mm.group(2).strip()
