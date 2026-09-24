@@ -129,14 +129,21 @@ def extract_date_info(filename):
     
     return best["date_str"], str(best["year"]), color
 
-def get_unique_filename(directory, name, ext=".mkv"):
+def get_unique_filename(directory, name, ext=".mkv", reserved=None):
+    """reserved: set di percorsi (normcase) già assegnati ma non ancora scritti su disco."""
     if not ext.startswith("."): ext = "." + ext
     full_path = os.path.join(directory, f"{name}{ext}")
     base_name = name
     counter = 1
-    while os.path.exists(full_path):
+
+    def _taken(p):
+        return os.path.exists(p) or (reserved is not None and os.path.normcase(p) in reserved)
+
+    while _taken(full_path):
         counter += 1
         full_path = os.path.join(directory, f"{base_name} ({counter}){ext}")
+    if reserved is not None:
+        reserved.add(os.path.normcase(full_path))
     return full_path
 
 def get_video_duration(file_path):

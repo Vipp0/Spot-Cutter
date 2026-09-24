@@ -55,7 +55,6 @@ class VideoEngine:
         self.log      = log_cb
         self.progress = progress_cb
         self._current_proc  = None
-        self._filename_lock = asyncio.Lock()  # protegge get_unique_filename dai tagli paralleli
         self._running = True   # verrà sincronizzato con state["running"]
 
         self.ytdlp_bin  = get_ytdlp_path()
@@ -110,6 +109,9 @@ class VideoEngine:
         cut_times = []
         completati = 0
         session_log = []   # raccoglie i risultati per il report finale
+        # Nomi assegnati ma non ancora creati da FFmpeg: evita che due spot
+        # con lo stesso nome (es. bumper ripetuti) si sovrascrivano nei tagli paralleli
+        nomi_prenotati: set[str] = set()
 
         total_videos = len(queue_snapshot)
 
@@ -257,7 +259,8 @@ class VideoEngine:
                 else:
                     canale_tag = ""
                 nome_finale = f"{nome_base}{canale_tag}{data_tag}"
-                out_f      = get_unique_filename(target_p, nome_finale, ext=".mkv")
+                out_f      = get_unique_filename(target_p, nome_finale, ext=".mkv",
+                                                 reserved=nomi_prenotati)
 
                 cut_jobs.append({
                     "idx_spot": i,
@@ -649,14 +652,6 @@ class VideoEngine:
                    usata dai tagli paralleli per killarli tutti su Stop.
         Ritorna True se riuscito.
         """
-        # Rigenera il nome file sotto lock per evitare duplicati tra tagli paralleli
-        async with self._filename_lock:
-            out_dir  = os.path.dirname(out_f)
-            out_base = os.path.splitext(os.path.basename(out_f))[0]
-            # Rimuove eventuale suffisso " (N)" già aggiunto in fase di preparazione
-            out_base = re.sub(r' \(\d+\)$', '', out_base)
-            out_f    = get_unique_filename(out_dir, out_base, ext=".mkv")
-
         cmd = [
             get_tool_path('ffmpeg'), '-y', '-i', master,
             '-ss', f"{r_s:.2f}",
