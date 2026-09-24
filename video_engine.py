@@ -189,12 +189,13 @@ class VideoEngine:
                     await status_cb(idx, "🛑 Interrotto", "orange")
                 break
 
-            # ── 2. RICERCA NERI (tre sensibilità, un solo passaggio) ──────
-            neri = await self._detect_blacks(master, v_bth, v_bdur, duration, state, c_flags)
-            if neri is None:
+            # ── 2. RICERCA NERI E CAMBI DI SCENA (un solo passaggio) ──────
+            analisi = await self._analyze_master(master, v_bth, v_bdur, duration, state, c_flags)
+            if analisi is None:
                 if status_cb:
                     await status_cb(idx, "🛑 Interrotto", "orange")
                 break
+            neri, scene = analisi
 
             # ── 3. LEGGI SPOT DAL TXT ─────────────────────────────────────
             # NEW: Costruiamo il percorso assoluto usando la cartella corrente
@@ -211,27 +212,29 @@ class VideoEngine:
             # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
             # e apre quello successivo (fine nero - cuscinetto inizio).
             timestamps = [s["t"] for s in spot_list]
-            scelte, scarto, n_campioni = self._choose_blacks(timestamps, neri, v_toll)
+            tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll)
             if n_campioni >= 3:
                 await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
                                f"(misurato su {n_campioni} stacchi).", "grey")
             punti = []          # per ogni timestamp: (fine clip precedente, inizio clip)
             da_verificare = 0
-            for j, (t, scelta) in enumerate(zip(timestamps, scelte), 1):
+            for j, (t, tg) in enumerate(zip(timestamps, tagli), 1):
                 mmss = f"{int(t) // 60:02d}:{int(t) % 60:02d}"
-                if scelta:
-                    b_s, b_e, sens = scelta
-                    await self.log(f"Stacco {j} ({mmss}): nero {b_s:.2f}-{b_e:.2f}s "
-                                   f"(sensibilità {sens})", "grey")
-                    punti.append((b_s + v_cusc_f, max(0.0, b_e - v_cusc_i)))
-                elif j == 1:
+                if tg is None:
                     punti.append((None, max(0.0, t - v_cusc_i)))
+                elif tg["tipo"] == "nero":
+                    await self.log(f"Stacco {j} ({mmss}): nero {tg['a']:.2f}-{tg['b']:.2f}s "
+                                   f"(sensibilità {tg['sens']})", "grey")
+                    punti.append((tg["a"] + v_cusc_f, max(0.0, tg["b"] - v_cusc_i)))
                 else:
-                    p = t + scarto
                     da_verificare += 1
-                    await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero trovato, "
-                                   f"taglio stimato a {p:.2f}s — da verificare", "orange")
-                    punti.append((p, p))
+                    motivo = ("stacco netto (cambio di scena)" if tg["tipo"] == "scena"
+                              else "nessuno stacco riconoscibile, punto stimato")
+                    await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero, {motivo} a "
+                                   f"{tg['a']:.2f}s — da verificare", "orange")
+                    # Senza nero il fotogramma sul punto di stacco è già del clip successivo:
+                    # mezzo fotogramma prima basta a escluderlo dal clip precedente.
+                    punti.append((tg["a"] - 0.02, tg["a"]))
 
             # ── 4. CALCOLA TUTTI I JOB DI TAGLIO ─────────────────────────
             # Prima costruiamo la lista completa dei job (tempi + nomi + path)
@@ -615,24 +618,30 @@ class VideoEngine:
             return []
 
     # ── BLACKDETECT A PIÙ SENSIBILITÀ ─────────────────────────────────────
-    async def _detect_blacks(self, master, bth, bdur, duration, state, c_flags) -> dict | None:
+    async def _analyze_master(self, master, bth, bdur, duration, state, c_flags) -> tuple | None:
         """
-        Un solo passaggio sul master con blackdetect a tre sensibilità (bth, +0.05, +0.10):
-        il nero delle registrazioni VHS cambia anche dentro lo stesso video.
-        Ritorna {sensibilità: [(black_start, black_end), ...]}, None se interrotto.
+        Un solo passaggio sul master:
+        - blackdetect a tre sensibilità (bth, +0.05, +0.10): il nero delle registrazioni
+          VHS cambia anche dentro lo stesso video;
+        - cambi di scena (scdet), per gli stacchi netti senza nero.
+        Ritorna ({sensibilità: [(black_start, black_end), ...]}, [(tempo, punteggio), ...]),
+        None se interrotto.
         """
         levels = [round(float(bth) + k * 0.05, 2) for k in range(3)]
         n = len(levels)
-        graph = (f"[0:v]split={n}" + "".join(f"[s{i}]" for i in range(n)) + ";"
+        graph = (f"[0:v]split={n + 1}" + "".join(f"[s{i}]" for i in range(n + 1)) + ";"
                  + ";".join(f"[s{i}]blackdetect=d={bdur}:pix_th={th}[o{i}]"
-                            for i, th in enumerate(levels)))
-        maps = [a for i in range(n) for a in ("-map", f"[o{i}]")]
+                            for i, th in enumerate(levels))
+                 + f";[s{n}]scale=320:-2,scdet=threshold=3[o{n}]")
+        maps = [a for i in range(n + 1) for a in ("-map", f"[o{i}]")]
         cmd = [get_tool_path('ffmpeg'), '-y', '-stats', '-i', master,
                '-filter_complex', graph, *maps, '-f', 'null', '-']
         # Nel grafo il filtro 0 è lo split, quindi il blackdetect i-esimo è Parsed_blackdetect_{i+1}
         names = {f"Parsed_blackdetect_{i + 1}": th for i, th in enumerate(levels)}
         found = {th: [] for th in levels}
+        scene = []
         rx = re.compile(r"(Parsed_blackdetect_\d+) @ [^\]]*\] black_start:\s*([\d.]+) black_end:\s*([\d.]+)")
+        rx_sc = re.compile(r"lavfi\.scd\.score:\s*([\d.]+),\s*lavfi\.scd\.time:\s*([\d.]+)")
 
         await self.log(f"Ricerca neri (sensibilità {', '.join(map(str, levels))})...", "grey")
         try:
@@ -661,6 +670,8 @@ class VideoEngine:
                     if m := rx.search(line):
                         if m.group(1) in names:
                             found[names[m.group(1)]].append((float(m.group(2)), float(m.group(3))))
+                    elif m := rx_sc.search(line):
+                        scene.append((float(m.group(2)), float(m.group(1))))
                     elif duration > 0 and (tm := re.search(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})", line)):
                         perc = min(0.99, get_seconds(tm.group(1)) / duration)
                         await self.progress(perc, f"Ricerca neri: {int(perc * 100)}%")
@@ -670,42 +681,110 @@ class VideoEngine:
                 await self.log(f"⚠️ Ricerca neri terminata con errore (codice {proc.returncode})", "red")
             await self.log("Neri trovati: " + ", ".join(
                 f"{len(v)} a sensibilità {th}" for th, v in found.items()), "grey")
-            return found
+            return found, scene
         except Exception as e:
             self._current_proc = None
             await self.log(f"⚠️ Errore ricerca neri: {e}", "red")
-            return {th: [] for th in levels}
+            return {th: [] for th in levels}, []
 
     @staticmethod
-    def _choose_blacks(timestamps: list, neri: dict, toll: float) -> tuple:
+    def _choose_cuts(timestamps: list, neri: dict, scene: list, toll: float) -> tuple:
         """
-        Sceglie il nero di ogni stacco (uno per timestamp del txt).
-        - candidati: neri che finiscono entro ±toll dal timestamp
-        - sensibilità: la più severa che trova almeno un candidato
-        - scarto: i timestamp di uno stesso video hanno di solito un anticipo costante
-          (mdeplo: ~+0.8s). Lo si misura sugli stacchi con un solo nero candidato e,
-          se i candidati sono più d'uno, si sceglie quello più vicino a timestamp + scarto.
-        Ritorna (scelte, scarto, n_campioni); scelte[i] = (black_start, black_end, sens) o None.
+        Trova il punto di taglio di ogni stacco (uno per timestamp del txt).
+
+        1. I pezzi di nero separati da meno di 0.2s diventano un nero unico
+           (disturbi VHS in mezzo al nero).
+        2. Scarto: i timestamp di uno stesso video hanno di solito un anticipo costante
+           (mdeplo: ~+0.8s), misurato sugli stacchi con un solo nero corto vicino.
+           Il punto atteso di ogni stacco è timestamp + scarto.
+        3. Alla sensibilità più severa gli stacchi si assegnano tutti insieme: un nero va
+           bene se dista al massimo toll dal punto atteso (0 se il punto cade dentro il nero,
+           così funzionano anche i neri lunghi), in ordine e senza mai riusare lo stesso nero.
+           Un timestamp uguale al precedente non dice nulla: prende il primo nero libero.
+        4. Stacchi rimasti senza nero: sensibilità più permissive, poi il cambio di scena più
+           forte vicino al punto atteso (stacco netto), infine il punto atteso stesso.
+
+        Ritorna (tagli, scarto, n_campioni). tagli[k] è None (primo spot senza nero) oppure
+        {"tipo": "nero"|"scena"|"stima", "a": inizio, "b": fine, "sens": sensibilità del nero}.
         """
+        GAP, MAX_CORTO, PENALITA, SCENA_MIN = 0.2, 1.5, toll + 0.5, 5.0
         levels = sorted(neri)
 
-        def candidati(t, th):
-            return [b for b in neri[th] if abs(b[1] - t) <= toll]
+        def unisci(lst):
+            out = []
+            for a, b in sorted(lst):
+                if out and a - out[-1][1] <= GAP + 1e-6:
+                    out[-1] = (out[-1][0], max(out[-1][1], b))
+                else:
+                    out.append((a, b))
+            return out
 
-        campioni = [c[0][1] - t for t in timestamps if len(c := candidati(t, levels[0])) == 1]
-        scarto = statistics.median(campioni) if len(campioni) >= 3 else 0.0
+        def distanza(p, b):
+            return 0.0 if b[0] <= p <= b[1] else min(abs(p - b[0]), abs(p - b[1]))
 
-        scelte = []
+        neri = {th: unisci(v) for th, v in neri.items()}
+        base = neri[levels[0]]
+
+        campioni = []
         for t in timestamps:
-            scelta = None
-            for th in levels:
-                c = candidati(t, th)
+            c = [b for b in base if abs(b[1] - t) <= toll]
+            if len(c) == 1 and c[0][1] - c[0][0] <= MAX_CORTO:
+                campioni.append(c[0][1] - t)
+        scarto = statistics.median(campioni) if len(campioni) >= 3 else 0.0
+        attesi = [t + scarto for t in timestamps]
+        n = len(attesi)
+
+        # 3. Programmazione dinamica: stato = indice dell'ultimo nero usato
+        stati = {-1: (0.0, [])}
+        for k, p in enumerate(attesi):
+            duplicato = k > 0 and timestamps[k] <= timestamps[k - 1]
+            limite = attesi[k + 1] if k + 1 < n else float("inf")
+            nuovi = {}
+            for ultimo, (costo, scelte) in stati.items():
+                opzioni = [(ultimo, costo + PENALITA, None)]
+                for j in range(ultimo + 1, len(base)):
+                    b = base[j]
+                    if duplicato:
+                        if b[0] > limite:
+                            break
+                        opzioni.append((j, costo + 0.001 * (j - ultimo), j))
+                    else:
+                        if b[0] > p + toll:
+                            break
+                        d = distanza(p, b)
+                        if d <= toll:
+                            opzioni.append((j, costo + d, j))
+                for chiave, c, scelta in opzioni:
+                    if chiave not in nuovi or c < nuovi[chiave][0]:
+                        nuovi[chiave] = (c, scelte + [scelta])
+            stati = nuovi
+        scelte = min(stati.values(), key=lambda s: s[0])[1]
+
+        tagli = [{"tipo": "nero", "a": base[j][0], "b": base[j][1], "sens": levels[0]}
+                 if j is not None else None for j in scelte]
+
+        # 4. Stacchi senza nero, sempre tra i due stacchi vicini
+        for k in range(n):
+            if tagli[k]:
+                continue
+            p = attesi[k]
+            lo = max((t["b"] for t in tagli[:k] if t), default=0.0)
+            hi = min((t["a"] for t in tagli[k + 1:] if t), default=float("inf"))
+            for th in levels[1:]:
+                c = [b for b in neri[th] if b[0] >= lo and b[1] <= hi and distanza(p, b) <= toll]
                 if c:
-                    b = min(c, key=lambda x: abs(x[1] - (t + scarto)))
-                    scelta = (b[0], b[1], th)
+                    b = min(c, key=lambda x: distanza(p, x))
+                    tagli[k] = {"tipo": "nero", "a": b[0], "b": b[1], "sens": th}
                     break
-            scelte.append(scelta)
-        return scelte, scarto, len(campioni)
+            if not tagli[k] and k > 0:   # il primo spot senza nero parte dal suo timestamp
+                c = [s for s in scene if lo < s[0] < hi and abs(s[0] - p) <= toll and s[1] >= SCENA_MIN]
+                if c:
+                    s = max(c, key=lambda x: x[1])
+                    tagli[k] = {"tipo": "scena", "a": s[0], "b": s[0]}
+                else:
+                    q = min(max(p, lo), hi)
+                    tagli[k] = {"tipo": "stima", "a": q, "b": q}
+        return tagli, scarto, len(campioni)
 
     # ── LETTURA TXT ───────────────────────────────────────────────────────
     def _read_spot_list(self, txt_path) -> list | None:
