@@ -269,9 +269,8 @@ class VideoEngine:
                 })
 
             # ── 5. TAGLIA IN BATCH PARALLELI ─────────────────────────────
-            # I tagli sono semplici copie di stream (nessuna ricodifica):
-            # FFmpeg legge dal master su disco e scrive file separati.
-            # Nessuna race condition — ogni job scrive su file diverso.
+            # Ogni taglio ricodifica il segmento dal master (keyframe normali + CRF)
+            # e scrive un file diverso: i nomi sono già stati prenotati al passo 4.
             #
             # Parallelismo adattivo: metà core logici, min 1, max 12.
             # Esempi:
@@ -652,9 +651,14 @@ class VideoEngine:
                    usata dai tagli paralleli per killarli tutti su Stop.
         Ritorna True se riuscito.
         """
+        # Seek ibrido: salto veloce fino a 1s prima (ogni frame del master è keyframe),
+        # poi seek preciso sull'ultimo secondo. Stesso risultato del solo seek dopo -i
+        # (anche nei pacchetti audio copiati), ma senza decodificare il master dall'inizio.
+        pre = min(1.0, r_s)
         cmd = [
-            get_tool_path('ffmpeg'), '-y', '-i', master,
-            '-ss', f"{r_s:.2f}",
+            get_tool_path('ffmpeg'), '-y',
+            '-ss', f"{r_s - pre:.2f}", '-i', master,
+            '-ss', f"{pre:.2f}",
             '-t',  f"{max(0.5, r_e - r_s):.2f}",
             '-c:v', 'libx264', '-crf', str(crf), '-g', '50',
             '-c:a', 'copy', out_f
