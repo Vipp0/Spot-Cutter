@@ -415,7 +415,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: dict, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Impostazioni Avanzate")
-        self.setFixedSize(780, 400)
+        self.setFixedSize(780, 430)
         self.setModal(True)
 
         self._entries = {}
@@ -504,6 +504,16 @@ class SettingsDialog(QDialog):
         self._auto_start.setToolTip("Se attivo, avvia subito l'elaborazione dopo aver importato un video da YouTube")
         layout.addWidget(self._auto_start)
 
+        self._use_master = QCheckBox("🎞  Usa il master (metodo classico, più lento)")
+        self._use_master.setChecked(settings.get("use_master", False))
+        self._use_master.setToolTip(
+            "Spento (default): neri e tagli vengono fatti direttamente sul video originale.\n"
+            "Stessa precisione al fotogramma, una ricodifica in meno: qualità più alta,\n"
+            "file più leggeri e niente file temporaneo.\n\n"
+            "Acceso: crea prima un master con un keyframe per ogni fotogramma e taglia da\n"
+            "quello, come nelle versioni fino alla 1.3.")
+        layout.addWidget(self._use_master)
+
         # Bottoni
         btn_row = QHBoxLayout()
         btn_save  = QPushButton("💾 Salva")
@@ -523,10 +533,12 @@ class SettingsDialog(QDialog):
                 "parallel_cuts": "0"}
         for k, e in self._entries.items():
             e.setText(defs[k])
+        self._use_master.setChecked(False)
 
     def get_values(self) -> dict:
         vals = {k: e.text() for k, e in self._entries.items()}
         vals["auto_start_after_yt"] = self._auto_start.isChecked()
+        vals["use_master"] = self._use_master.isChecked()
         return vals
 
 
@@ -2093,6 +2105,7 @@ class SpotCutterApp(QMainWindow):
         self.state["running"] = True
         self.state["stats_counts"] = {k: 0 for k in self.state["stats_counts"]}
         self.state["parallel_cuts"] = int(self._s.get("parallel_cuts", 0))
+        self.state["use_master"] = bool(self._s.get("use_master", False))
         self._sync_buttons()
 
         # Crea worker e thread
@@ -2239,7 +2252,8 @@ class SpotCutterApp(QMainWindow):
         save_settings(vals["crf"], vals["cusc_i"], vals["cusc_f"],
                       vals["toll"], vals["bth"], vals["bdur"],
                       vals.get("parallel_cuts", "0"),
-                      vals.get("auto_start_after_yt", False))
+                      vals.get("auto_start_after_yt", False),
+                      vals.get("use_master", False))
         self._s = load_settings()
         self._on_log("✅ Impostazioni salvate.", "cyan")
 

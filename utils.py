@@ -17,7 +17,7 @@ SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settin
 SETTINGS_DEFAULTS = {
     "crf": "20", "cusc_i": "0.05", "cusc_f": "0.12",
     "toll": "2.0", "bth": "0.1", "bdur": "0.1",
-    "parallel_cuts": "0", "auto_start_after_yt": False
+    "parallel_cuts": "0", "auto_start_after_yt": False, "use_master": False
 }
 
 # ── RICERCA ESEGUIBILI ESTERNI ────────────────────────────────────────────
@@ -199,11 +199,12 @@ def load_settings():
     except: return dict(SETTINGS_DEFAULTS)
 
 def save_settings(crf, cusc_i, cusc_f, toll, bth, bdur, parallel_cuts="0",
-                  auto_start_after_yt=False):
+                  auto_start_after_yt=False, use_master=False):
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump({"crf": crf, "cusc_i": str(cusc_i), "cusc_f": str(cusc_f),
                        "toll": str(toll), "bth": bth, "bdur": bdur,
                        "parallel_cuts": str(parallel_cuts),
-                       "auto_start_after_yt": auto_start_after_yt}, f, indent=2)
+                       "auto_start_after_yt": auto_start_after_yt,
+                       "use_master": use_master}, f, indent=2)
     except Exception as e: print(f"⚠️ Errore settings: {e}")

@@ -35,7 +35,7 @@ ProgressCallback = Callable[[float, str], Awaitable[None]]  # (valore 0.0-1.0, l
 
 class VideoEngine:
     """
-    Gestisce tutta la logica pesante: creazione master, blackdetect, taglio segmenti.
+    Gestisce tutta la logica pesante: blackdetect, taglio segmenti (e master, se richiesto).
     Non sa nulla di Flet — comunica con main.py solo tramite callback.
 
     Uso tipico in main.py:
@@ -107,7 +107,6 @@ class VideoEngine:
         """
         v_crf, v_cusc_i, v_cusc_f, v_toll, v_bth, v_bdur = settings
         c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        cut_times = []
         completati = 0
         session_log = []   # raccoglie i risultati per il report finale
         # Nomi assegnati ma non ancora creati da FFmpeg: evita che due spot
@@ -162,35 +161,46 @@ class VideoEngine:
             if colore_data == "orange":
                 await self.log(f"⚠️ Data in {vid} potrebbe essere ambigua, verificare.", "orange")
             duration = get_video_duration(video_path_completo)
-            # È meglio crearlo dentro la cartella dei video, non dove sta lo script
-            master_dir = os.path.join(state["current_dir"], "Master_Temp")
-            os.makedirs(master_dir, exist_ok=True)
-            master = os.path.join(master_dir, f"MASTER_{os.path.splitext(vid)[0]}.mp4")
 
-            # Pulizia master precedente rimasto da elaborazione interrotta
-            if os.path.exists(master):
-                try:
-                    os.remove(master)
-                    await self.log(f"🧹 Master precedente rimosso: {os.path.basename(master)}", "grey")
-                except Exception as e:
-                    await self.log(f"⚠️ Impossibile rimuovere master precedente: {e}", "orange")
-            # ----------------------------------------------
+            # ── 1. SORGENTE: ORIGINALE (default) O MASTER ALL-INTRA ───────
+            # I clip vengono sempre ricodificati, quindi FFmpeg taglia al fotogramma
+            # esatto anche dall'originale: il master aggiungerebbe solo una
+            # ricodifica in più (verificato su 137 clip: stessi fotogrammi, qualità
+            # più alta, file più leggeri). Resta disponibile dalle impostazioni.
+            usa_master = state.get("use_master", False)
+            master = master_dir = None
+            if usa_master:
+                # È meglio crearlo dentro la cartella dei video, non dove sta lo script
+                master_dir = os.path.join(state["current_dir"], "Master_Temp")
+                os.makedirs(master_dir, exist_ok=True)
+                master = os.path.join(master_dir, f"MASTER_{os.path.splitext(vid)[0]}.mp4")
 
-            # ── 1. CREA MASTER ────────────────────────────────────────────
-            ok = await self._create_master(video_path_completo, master, duration, state, c_flags)
-            if not ok:
-                # Se fallisce la creazione del master, segniamo l'errore
-                if status_cb:
-                    await status_cb(idx, "❌ Errore Master", "red")
-                continue
-            
-            if not state["running"]:
-                if status_cb:
-                    await status_cb(idx, "🛑 Interrotto", "orange")
-                break
+                # Pulizia master precedente rimasto da elaborazione interrotta
+                if os.path.exists(master):
+                    try:
+                        os.remove(master)
+                        await self.log(f"🧹 Master precedente rimosso: {os.path.basename(master)}", "grey")
+                    except Exception as e:
+                        await self.log(f"⚠️ Impossibile rimuovere master precedente: {e}", "orange")
+
+                ok = await self._create_master(video_path_completo, master, duration, state, c_flags)
+                if not ok:
+                    # Se fallisce la creazione del master, segniamo l'errore
+                    if status_cb:
+                        await status_cb(idx, "❌ Errore Master", "red")
+                    continue
+
+                if not state["running"]:
+                    if status_cb:
+                        await status_cb(idx, "🛑 Interrotto", "orange")
+                    break
+                sorgente = master
+            else:
+                await self.log("Taglio diretto dall'originale (senza master).", "grey")
+                sorgente = video_path_completo
 
             # ── 2. RICERCA NERI E CAMBI DI SCENA (un solo passaggio) ──────
-            analisi = await self._analyze_master(master, v_bth, v_bdur, duration, state, c_flags)
+            analisi = await self._analyze_video(sorgente, v_bth, v_bdur, duration, state, c_flags)
             if analisi is None:
                 if status_cb:
                     await status_cb(idx, "🛑 Interrotto", "orange")
@@ -282,8 +292,14 @@ class VideoEngine:
                 })
 
             # ── 5. TAGLIA IN BATCH PARALLELI ─────────────────────────────
-            # Ogni taglio ricodifica il segmento dal master (keyframe normali + CRF)
+            # Ogni taglio ricodifica il segmento dalla sorgente (keyframe normali + CRF)
             # e scrive un file diverso: i nomi sono già stati prenotati al passo 4.
+            #
+            # Coda continua: appena un taglio finisce ne parte un altro, e i clip più
+            # lunghi partono per primi, così alla fine i bumper corti riempiono i buchi
+            # invece di lasciare core fermi ad aspettare lo spot più lungo.
+            # Ogni x264 usa già tutti i core da solo: limitarne i thread non aiuta
+            # (misurato su i5-13500H, da 4 a 16 tagli insieme).
             #
             # Parallelismo adattivo: metà core logici, min 1, max 12.
             # Esempi:
@@ -311,42 +327,24 @@ class VideoEngine:
 
             total_jobs  = len(cut_jobs)
             done_count  = 0
+            # L'ETA si basa sui secondi di video già tagliati, non sul numero di clip
+            sec_totali  = sum(max(0.5, j["r_e"] - j["r_s"]) for j in cut_jobs) or 1.0
+            sec_fatti   = 0.0
+            t_inizio    = time.time()
+            coda        = sorted(cut_jobs, key=lambda j: j["r_e"] - j["r_s"], reverse=True)
+            posti       = asyncio.Semaphore(parallel_cuts)
+            # Processi FFmpeg attivi: Stop li chiude tutti, non solo l'ultimo
+            active_procs = []
 
-            # Suddivide la lista in batch di dimensione parallel_cuts
-            for batch_start in range(0, total_jobs, parallel_cuts):
-                if not state["running"]:
-                    await self.log("🛑 Interruzione durante taglio spot", "orange")
-                    break
+            await self.progress(0.0, f"Taglio 0/{total_jobs} "
+                                     f"({parallel_cuts} paralleli) — calcolo ETA...")
 
-                batch = cut_jobs[batch_start: batch_start + parallel_cuts]
-
-                # Aggiorna la progress bar mostrando il range del batch
-                first_n = batch[0]["idx_spot"]
-                last_n  = batch[-1]["idx_spot"]
-                if not cut_times:
-                    label = (f"Taglio {first_n}-{last_n}/{total_jobs} "
-                             f"({len(batch)} paralleli) — calcolo ETA...")
-                else:
-                    remaining_batches = (total_jobs - done_count) / parallel_cuts
-                    avg = sum(cut_times) / len(cut_times)
-                    em, es = divmod(int(avg * remaining_batches), 60)
-                    label = (f"Taglio {first_n}-{last_n}/{total_jobs} "
-                             f"({len(batch)} paralleli) — ~{em}m {es}s")
-                await self.progress(done_count / total_jobs, label)
-
-                # Azzera results per questo batch — evita di usare
-                # i risultati del batch precedente se gather non viene chiamato
-                results = []
-
-                # Lancia tutti i tagli del batch in contemporanea
-                batch_start_t = time.time()
-
-                # Lista dei processi attivi nel batch corrente,
-                # Usata da Stop per killarli tutti, non solo l'ultimo
-                active_procs = []
-
-                async def _run_one(job):
-                    """Esegue un singolo taglio e ritorna (job, esito, tempo)."""
+            async def _run_one(job):
+                """Esegue un singolo taglio appena si libera un posto nella coda."""
+                nonlocal done_count, sec_fatti, tagli_riusciti
+                async with posti:
+                    if not state["running"]:
+                        return
                     await self.log(
                         f"⚙️ Avvio taglio {job['idx_spot']}/{total_jobs}: "
                         f"{os.path.basename(job['out_f'])}",
@@ -354,7 +352,7 @@ class VideoEngine:
                     )
                     t_start = time.time()
                     ok = await self._cut_segment(
-                        master, job["r_s"], job["r_e"],
+                        sorgente, job["r_s"], job["r_e"],
                         v_crf, job["out_f"], state, c_flags,
                         proc_list=active_procs
                     )
@@ -371,37 +369,34 @@ class VideoEngine:
                             f"{os.path.basename(job['out_f'])}",
                             "red"
                         )
-                    return job, ok, elapsed
 
-                results = await asyncio.gather(
-                    *[_run_one(j) for j in batch],
-                    return_exceptions=False
-                )
+                done_count += 1
+                sec_fatti  += max(0.5, job["r_e"] - job["r_s"])
+                if ok and state["running"]:
+                    tagli_riusciti += 1
+                    state["stats_counts"].setdefault(job["k"], 0)
+                    state["stats_counts"][job["k"]] += 1
+                    if "update_stats_cb" in state and state["update_stats_cb"]:
+                        await state["update_stats_cb"]()
+                if state["running"]:
+                    resto = (time.time() - t_inizio) / sec_fatti * (sec_totali - sec_fatti)
+                    em, es = divmod(int(resto), 60)
+                    await self.progress(done_count / total_jobs,
+                                        f"Taglio {done_count}/{total_jobs} "
+                                        f"({parallel_cuts} paralleli) — ~{em}m {es}s")
 
-                batch_elapsed = time.time() - batch_start_t
-                # Il tempo medio per spot dentro il batch vale solo se il
-                # batch era pieno (altrimenti l'ETA sarebbe distorta).
-                if len(batch) == parallel_cuts:
-                    cut_times.append(batch_elapsed)
-
-                # Processa i risultati nell'ordine in cui erano nella lista
-                for job, ok_cut, elapsed in results:
-                    done_count += 1
-                    if ok_cut and state["running"]:
-                        tagli_riusciti += 1
-                        state["stats_counts"].setdefault(job["k"], 0)
-                        state["stats_counts"][job["k"]] += 1
-                        if "update_stats_cb" in state and state["update_stats_cb"]:
-                            await state["update_stats_cb"]()
+            await asyncio.gather(*[_run_one(j) for j in coda])
+            if not state["running"]:
+                await self.log("🛑 Interruzione durante taglio spot", "orange")
 
             # ── 5. PULIZIA E SPOSTAMENTO ──────────────────────────────────
-            if os.path.exists(master):
+            if master and os.path.exists(master):
                 try:
                     os.remove(master)
                 except Exception:
                     pass
             # Rimuove la cartella Master_Temp solo se è rimasta vuota
-            if os.path.exists(master_dir):
+            if master_dir and os.path.exists(master_dir):
                 try:
                     os.rmdir(master_dir)
                 except Exception:
@@ -618,9 +613,9 @@ class VideoEngine:
             return []
 
     # ── BLACKDETECT A PIÙ SENSIBILITÀ ─────────────────────────────────────
-    async def _analyze_master(self, master, bth, bdur, duration, state, c_flags) -> tuple | None:
+    async def _analyze_video(self, video, bth, bdur, duration, state, c_flags) -> tuple | None:
         """
-        Un solo passaggio sul master:
+        Un solo passaggio sul video (originale o master):
         - blackdetect a tre sensibilità (bth, +0.05, +0.10): il nero delle registrazioni
           VHS cambia anche dentro lo stesso video;
         - cambi di scena (scdet), per gli stacchi netti senza nero.
@@ -634,7 +629,7 @@ class VideoEngine:
                             for i, th in enumerate(levels))
                  + f";[s{n}]scale=320:-2,scdet=threshold=3[o{n}]")
         maps = [a for i in range(n + 1) for a in ("-map", f"[o{i}]")]
-        cmd = [get_tool_path('ffmpeg'), '-y', '-stats', '-i', master,
+        cmd = [get_tool_path('ffmpeg'), '-y', '-stats', '-i', video,
                '-filter_complex', graph, *maps, '-f', 'null', '-']
         # Nel grafo il filtro 0 è lo split, quindi il blackdetect i-esimo è Parsed_blackdetect_{i+1}
         names = {f"Parsed_blackdetect_{i + 1}": th for i, th in enumerate(levels)}
@@ -805,21 +800,37 @@ class VideoEngine:
         except Exception:
             return None
 
-    async def _cut_segment(self, master, r_s, r_e, crf, out_f, state, c_flags,
+    @staticmethod
+    async def _scarta_parziale(out_f):
+        """Cancella il clip rimasto a metà (Stop, timeout o errore): in libreria solo clip completi."""
+        for _ in range(10):
+            try:
+                if os.path.exists(out_f):
+                    os.remove(out_f)
+                return
+            except PermissionError:
+                # Windows può tenere il file aperto per un attimo dopo la chiusura di FFmpeg
+                await asyncio.sleep(0.2)
+            except OSError:
+                return
+
+    async def _cut_segment(self, src, r_s, r_e, crf, out_f, state, c_flags,
                            proc_list: list | None = None) -> bool:
         """
-        Taglia un singolo segmento dal master e lo salva in out_f.
+        Taglia un singolo segmento dalla sorgente (originale o master) e lo salva in out_f.
         proc_list: lista condivisa dove registrare il processo attivo,
                    usata dai tagli paralleli per killarli tutti su Stop.
         Ritorna True se riuscito.
         """
-        # Seek ibrido: salto veloce fino a 1s prima (ogni frame del master è keyframe),
-        # poi seek preciso sull'ultimo secondo. Stesso risultato del solo seek dopo -i
-        # (anche nei pacchetti audio copiati), ma senza decodificare il master dall'inizio.
+        # Seek ibrido: salto veloce fino a 1s prima, poi seek preciso sull'ultimo secondo.
+        # Dall'originale FFmpeg riparte dal keyframe precedente e decodifica fino al
+        # fotogramma esatto, quindi il primo fotogramma è lo stesso che dal master.
+        # Stesso risultato del solo seek dopo -i (anche nei pacchetti audio copiati),
+        # ma senza decodificare il video dall'inizio.
         pre = min(1.0, r_s)
         cmd = [
             get_tool_path('ffmpeg'), '-y',
-            '-ss', f"{r_s - pre:.2f}", '-i', master,
+            '-ss', f"{r_s - pre:.2f}", '-i', src,
             '-ss', f"{pre:.2f}",
             '-t',  f"{max(0.5, r_e - r_s):.2f}",
             '-c:v', 'libx264', '-crf', str(crf), '-g', '50',
@@ -840,11 +851,13 @@ class VideoEngine:
                 if not state.get("running", True):
                     await self.log("🛑 Interruzione forzata FFmpeg...", "orange")
                     await safe_kill_process(p_cut)
+                    await self._scarta_parziale(out_f)
                     return False
                 await asyncio.sleep(0.1)
                 if time.time() - start_time > timeout:
                     await self.log("⏱️ Timeout FFmpeg...", "red")
                     await safe_kill_process(p_cut)
+                    await self._scarta_parziale(out_f)
                     return False
 
             await p_cut.wait()
@@ -858,10 +871,12 @@ class VideoEngine:
                     f"⚠️ FFmpeg errore (code {p_cut.returncode}): {os.path.basename(out_f)}",
                     "red"
                 )
+                await self._scarta_parziale(out_f)
                 return False
             return True
         except Exception as e:
             await self.log(f"🚨 Errore critico FFmpeg: {e}", "red")
+            await self._scarta_parziale(out_f)
             if proc_list is None:
                 self._current_proc = None
             return False
