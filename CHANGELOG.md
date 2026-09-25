@@ -5,7 +5,7 @@ Changes after release 1.2 (not yet published on GitHub).
 
 ---
 
-## 🎬 Spot Cutter 1.4.1
+## 🎬 Spot Cutter 1.3.2
 
 ### ✨ Miglioramenti del motore / Engine improvements
 
@@ -26,7 +26,7 @@ Changes after release 1.2 (not yet published on GitHub).
 
 ---
 
-## 🎬 Spot Cutter 1.4
+## 🎬 Spot Cutter 1.3.1
 
 ### ⚡ Prestazioni e qualità / Performance and quality
 
