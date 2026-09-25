@@ -1,0 +1,99 @@
+# Changelog
+
+Modifiche successive alla release 1.2 (non ancora pubblicate su GitHub).
+Changes after release 1.2 (not yet published on GitHub).
+
+---
+
+## 🎬 Spot Cutter 1.4.1
+
+### ✨ Miglioramenti del motore / Engine improvements
+
+- 🇮🇹 **Neri VHS rovinati** — sui nastri rovinati il nero "schiarisce" verso il grigio o viene spezzato da righe di traking: ora il clip parte dalla fine vera del nero e non più con fino a 1 secondo di nero sporco all'inizio
+- 🇬🇧 **Damaged VHS blacks** — on worn tapes the black fades towards grey or is broken by tracking lines: clips now start at the real end of the black instead of with up to 1 second of dirty black
+
+- 🇮🇹 **Sfondi colorati scuri protetti** — un fondo blu o verde scuro all'inizio di uno spot non viene più scambiato per nero (controllo della saturazione): nessun fotogramma dello spot viene tagliato via
+- 🇬🇧 **Dark coloured backgrounds protected** — a dark blue or green background at the start of a spot is no longer mistaken for black (saturation check): no spot frames are cut off
+
+- 🇮🇹 **Stacchi netti su sfondo scuro** — quando uno spot comincia direttamente con uno sfondo scuro colorato, senza nero, il taglio cade esattamente sul primo fotogramma e lo stacco viene segnalato "da verificare"
+- 🇬🇧 **Hard cuts on dark backgrounds** — when a spot starts directly on a dark coloured background with no black, the cut lands exactly on its first frame and is flagged "to be checked"
+
+- 🇮🇹 Il log indica quando la fine di un nero è stata corretta ("fine corretta da ...")
+- 🇬🇧 The log shows when the end of a black has been corrected ("fine corretta da ...")
+
+- 🇮🇹 Sui neri netti non cambia nulla (al massimo 1 fotogramma di nero in meno); la ricerca neri richiede circa 12 secondi in più ogni 20 minuti di video
+- 🇬🇧 Nothing changes on clean blacks (at most 1 black frame less); black detection takes about 12 extra seconds per 20 minutes of video
+
+---
+
+## 🎬 Spot Cutter 1.4
+
+### ⚡ Prestazioni e qualità / Performance and quality
+
+- 🇮🇹 **Taglio diretto dall'originale** — il master intermedio non serve più: stessa precisione al fotogramma, una ricodifica in meno, qualità più alta (VMAF da +0,9 a +1,6), file dal 4% all'8% più leggeri, elaborazione circa un terzo più veloce e nessun file temporaneo
+- 🇬🇧 **Direct cutting from the original** — the intermediate master is no longer needed: same frame accuracy, one less re-encode, higher quality (VMAF +0.9 to +1.6), files 4–8% smaller, processing about a third faster and no temporary file
+
+- 🇮🇹 **Coda continua per i tagli paralleli** — appena un taglio finisce ne parte un altro, con i clip più lunghi per primi: nessun core resta fermo ad aspettare
+- 🇬🇧 **Continuous queue for parallel cuts** — as soon as a cut ends another one starts, longest clips first: no core sits idle waiting
+
+- 🇮🇹 Tempo stimato (ETA) calcolato sui secondi di video già tagliati
+- 🇬🇧 Estimated time (ETA) based on the seconds of video already cut
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Opzione "Usa il master (metodo classico)"** nelle impostazioni, spenta di default, per tornare al metodo della 1.3
+- 🇬🇧 **"Use the master (classic method)" option** in settings, off by default, to go back to the 1.3 method
+
+### 🐛 Bug fix
+
+- 🇮🇹 Dopo uno Stop (o un errore di FFmpeg) non restano più clip tagliati a metà nella libreria
+- 🇬🇧 After a Stop (or an FFmpeg error) no half-cut clips are left in the library
+
+---
+
+## 🎬 Spot Cutter 1.3
+
+### ✨ Nuovo motore di taglio / New cutting engine
+
+- 🇮🇹 **Nero dinamico per ogni stacco** — il nero viene cercato a tre sensibilità nello stesso passaggio (0.1, 0.15, 0.20): i neri "grigi" delle registrazioni VHS vengono trovati stacco per stacco
+- 🇬🇧 **Dynamic black for each cut** — blacks are searched at three sensitivities in a single pass (0.1, 0.15, 0.20): the "grey" blacks of VHS recordings are found cut by cut
+
+- 🇮🇹 **Taratura dei timestamp per video** — il programma misura di quanto i timestamp del txt anticipano i neri e ne tiene conto
+- 🇬🇧 **Per-video timestamp calibration** — the program measures how early the txt timestamps are compared to the blacks and compensates
+
+- 🇮🇹 **Scelta dei neri in ordine** — ogni nero viene usato per un solo stacco: gestiti bumper brevi, neri lunghi, neri spezzati da disturbi e timestamp ripetuti
+- 🇬🇧 **Ordered black assignment** — each black is used for one cut only: short bumpers, long blacks, blacks broken by noise and repeated timestamps are handled
+
+- 🇮🇹 **Stacchi netti senza nero** — riconosciuti dal cambio di scena, tagliati senza fotogrammi dello spot vicino e segnalati "da verificare" nel log e nella card
+- 🇬🇧 **Hard cuts with no black** — detected from the scene change, cut with no frames from the adjacent spot and flagged "to be checked" in the log and the card
+
+- 🇮🇹 Rilevamento del silenzio rimosso: spostava il taglio dentro gli spot (causa dei "decimi dello spot precedente")
+- 🇬🇧 Silence detection removed: it moved the cut inside the spots (cause of the "tenths of the previous spot")
+
+- 🇮🇹 Il log mostra per ogni stacco il nero scelto e la sensibilità usata
+- 🇬🇧 The log shows the chosen black and the sensitivity used for each cut
+
+### ⚡ Prestazioni / Performance
+
+- 🇮🇹 **Taglio circa 4 volte più veloce** per ogni clip (seek ibrido), con risultato identico al fotogramma
+- 🇬🇧 **About 4× faster cutting** per clip (hybrid seek), with frame-identical output
+
+### 🐛 Bug fix
+
+- 🇮🇹 File txt mancante o vuoto non riconosciuto correttamente nella coda
+- 🇬🇧 Missing or empty txt file not correctly detected in the queue
+
+- 🇮🇹 Spot con lo stesso nome (es. bumper ripetuti) potevano ancora sovrascriversi durante i tagli paralleli
+- 🇬🇧 Spots with the same name (e.g. repeated bumpers) could still overwrite each other during parallel cuts
+
+- 🇮🇹 Timestamp a una cifra nel txt (es. 0:27, 1:05:20) ora accettati
+- 🇬🇧 Single-digit timestamps in the txt (e.g. 0:27, 1:05:20) are now accepted
+
+- 🇮🇹 Stop durante il download da YouTube ora chiude davvero yt-dlp
+- 🇬🇧 Stop during a YouTube download now really closes yt-dlp
+
+---
+
+> ⚠️ **Windows only.** Mac/Linux compatibility not tested.
+>
+> ℹ️ This software is intended for personal archival use only.

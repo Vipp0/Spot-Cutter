@@ -15,6 +15,7 @@ import subprocess
 import time
 import json
 import statistics
+import bisect
 from typing import Callable, Awaitable, Any, cast
 
 def get_ytdlp_path() -> str:
@@ -27,6 +28,11 @@ from utils import (
     safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
     get_tool_path
 )
+
+# Saturazione media (0-~180) sopra la quale un fotogramma scuro non è nero ma contenuto:
+# il nero sporco dei VHS (grigio, verdastro, righe di traking) resta sotto 6, un fondo
+# blu saturo arriva a 70.
+SAT_NERO = 10
 
 # Tipo per le callback di progresso: funzione async che accetta (messaggio, colore)
 LogCallback      = Callable[[str, str], Awaitable[None]]
@@ -205,7 +211,7 @@ class VideoEngine:
                 if status_cb:
                     await status_cb(idx, "🛑 Interrotto", "orange")
                 break
-            neri, scene = analisi
+            neri, scene, colorati = analisi
 
             # ── 3. LEGGI SPOT DAL TXT ─────────────────────────────────────
             # NEW: Costruiamo il percorso assoluto usando la cartella corrente
@@ -222,7 +228,7 @@ class VideoEngine:
             # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
             # e apre quello successivo (fine nero - cuscinetto inizio).
             timestamps = [s["t"] for s in spot_list]
-            tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll)
+            tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll, colorati)
             if n_campioni >= 3:
                 await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
                                f"(misurato su {n_campioni} stacchi).", "grey")
@@ -233,8 +239,9 @@ class VideoEngine:
                 if tg is None:
                     punti.append((None, max(0.0, t - v_cusc_i)))
                 elif tg["tipo"] == "nero":
+                    corr = (f", fine corretta da {tg['b_base']:.2f}s" if "b_base" in tg else "")
                     await self.log(f"Stacco {j} ({mmss}): nero {tg['a']:.2f}-{tg['b']:.2f}s "
-                                   f"(sensibilità {tg['sens']})", "grey")
+                                   f"(sensibilità {tg['sens']}{corr})", "grey")
                     punti.append((tg["a"] + v_cusc_f, max(0.0, tg["b"] - v_cusc_i)))
                 else:
                     da_verificare += 1
@@ -618,25 +625,32 @@ class VideoEngine:
         Un solo passaggio sul video (originale o master):
         - blackdetect a tre sensibilità (bth, +0.05, +0.10): il nero delle registrazioni
           VHS cambia anche dentro lo stesso video;
-        - cambi di scena (scdet), per gli stacchi netti senza nero.
-        Ritorna ({sensibilità: [(black_start, black_end), ...]}, [(tempo, punteggio), ...]),
-        None se interrotto.
+        - cambi di scena (scdet), per gli stacchi netti senza nero;
+        - fotogrammi colorati (saturazione media > SAT_NERO): blackdetect guarda solo la
+          luminosità, e un blu saturo è scuro quanto il nero sporco del VHS, che però è grigio.
+        Ritorna ({sensibilità: [(black_start, black_end), ...]}, [(tempo, punteggio), ...],
+        [tempi dei fotogrammi colorati]), None se interrotto.
         """
         levels = [round(float(bth) + k * 0.05, 2) for k in range(3)]
         n = len(levels)
-        graph = (f"[0:v]split={n + 1}" + "".join(f"[s{i}]" for i in range(n + 1)) + ";"
+        graph = (f"[0:v]split={n + 2}" + "".join(f"[s{i}]" for i in range(n + 2)) + ";"
                  + ";".join(f"[s{i}]blackdetect=d={bdur}:pix_th={th}[o{i}]"
                             for i, th in enumerate(levels))
-                 + f";[s{n}]scale=320:-2,scdet=threshold=3[o{n}]")
-        maps = [a for i in range(n + 1) for a in ("-map", f"[o{i}]")]
+                 + f";[s{n}]scale=320:-2,scdet=threshold=3[o{n}]"
+                 + f";[s{n + 1}]scale=160:-2,signalstats,metadata=mode=select:"
+                   f"key=lavfi.signalstats.SATAVG:value={SAT_NERO}:function=greater,"
+                   f"metadata=mode=print:key=lavfi.signalstats.SATAVG[o{n + 1}]")
+        maps = [a for i in range(n + 2) for a in ("-map", f"[o{i}]")]
         cmd = [get_tool_path('ffmpeg'), '-y', '-stats', '-i', video,
                '-filter_complex', graph, *maps, '-f', 'null', '-']
         # Nel grafo il filtro 0 è lo split, quindi il blackdetect i-esimo è Parsed_blackdetect_{i+1}
         names = {f"Parsed_blackdetect_{i + 1}": th for i, th in enumerate(levels)}
         found = {th: [] for th in levels}
         scene = []
+        colorati = []
         rx = re.compile(r"(Parsed_blackdetect_\d+) @ [^\]]*\] black_start:\s*([\d.]+) black_end:\s*([\d.]+)")
         rx_sc = re.compile(r"lavfi\.scd\.score:\s*([\d.]+),\s*lavfi\.scd\.time:\s*([\d.]+)")
+        rx_col = re.compile(r"Parsed_metadata_\d+ @ [^\]]*\] frame:\d+\s+pts:\S+\s+pts_time:([\d.]+)")
 
         await self.log(f"Ricerca neri (sensibilità {', '.join(map(str, levels))})...", "grey")
         try:
@@ -667,6 +681,8 @@ class VideoEngine:
                             found[names[m.group(1)]].append((float(m.group(2)), float(m.group(3))))
                     elif m := rx_sc.search(line):
                         scene.append((float(m.group(2)), float(m.group(1))))
+                    elif m := rx_col.search(line):
+                        colorati.append(float(m.group(1)))
                     elif duration > 0 and (tm := re.search(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})", line)):
                         perc = min(0.99, get_seconds(tm.group(1)) / duration)
                         await self.progress(perc, f"Ricerca neri: {int(perc * 100)}%")
@@ -676,14 +692,15 @@ class VideoEngine:
                 await self.log(f"⚠️ Ricerca neri terminata con errore (codice {proc.returncode})", "red")
             await self.log("Neri trovati: " + ", ".join(
                 f"{len(v)} a sensibilità {th}" for th, v in found.items()), "grey")
-            return found, scene
+            return found, scene, sorted(colorati)
         except Exception as e:
             self._current_proc = None
             await self.log(f"⚠️ Errore ricerca neri: {e}", "red")
-            return {th: [] for th in levels}, []
+            return {th: [] for th in levels}, [], None
 
     @staticmethod
-    def _choose_cuts(timestamps: list, neri: dict, scene: list, toll: float) -> tuple:
+    def _choose_cuts(timestamps: list, neri: dict, scene: list, toll: float,
+                     colorati: list | None = None) -> tuple:
         """
         Trova il punto di taglio di ogni stacco (uno per timestamp del txt).
 
@@ -698,9 +715,12 @@ class VideoEngine:
            Un timestamp uguale al precedente non dice nulla: prende il primo nero libero.
         4. Stacchi rimasti senza nero: sensibilità più permissive, poi il cambio di scena più
            forte vicino al punto atteso (stacco netto), infine il punto atteso stesso.
+        5. La fine di ogni nero si allunga con le sensibilità più permissive (nero VHS che
+           schiarisce), fermandosi al primo fotogramma colorato (vedi colorati).
 
         Ritorna (tagli, scarto, n_campioni). tagli[k] è None (primo spot senza nero) oppure
-        {"tipo": "nero"|"scena"|"stima", "a": inizio, "b": fine, "sens": sensibilità del nero}.
+        {"tipo": "nero"|"scena"|"stima", "a": inizio, "b": fine, "sens": sensibilità del nero};
+        "b_base" è la fine del nero prima del passo 5, se è cambiata.
         """
         GAP, MAX_CORTO, PENALITA, SCENA_MIN = 0.2, 1.5, toll + 0.5, 5.0
         levels = sorted(neri)
@@ -779,6 +799,37 @@ class VideoEngine:
                 else:
                     q = min(max(p, lo), hi)
                     tagli[k] = {"tipo": "stima", "a": q, "b": q}
+
+        # 5. Fine del nero: sui nastri rovinati il nero si "solleva" verso il grigio (o un
+        #    disturbo lo spezza) e la sensibilità scelta ne vede solo la prima parte. Se alle
+        #    sensibilità più permissive lo stesso nero continua, il clip successivo parte dalla
+        #    fine vera, mai oltre l'inizio dello stacco dopo. Il nero finisce comunque al primo
+        #    fotogramma colorato: per la luminosità un blu saturo è "nero", ma è già lo spot.
+        #    Senza i dati sul colore (analisi fallita) i neri restano come sono.
+        #    La fine del clip precedente non cambia.
+        if colorati is not None:
+            for k, tg in enumerate(tagli):
+                if not tg or tg["tipo"] != "nero":
+                    continue
+                hi = min((t["a"] for t in tagli[k + 1:] if t), default=float("inf"))
+                fine = tg["b"]
+                for th in levels:
+                    if th <= tg["sens"]:
+                        continue
+                    for x, y in neri[th]:
+                        if x <= fine + GAP + 1e-6 and fine < y < hi:
+                            fine = y
+                # Un nero scelto a sensibilità permissiva può contenere colore già dall'inizio
+                da = tg["a"] if tg["sens"] > levels[0] else tg["b"]
+                i = bisect.bisect_left(colorati, da - 1e-3)
+                if i < len(colorati) and colorati[i] < fine:
+                    fine = max(colorati[i], tg["a"])
+                if fine <= tg["a"] + 1e-6:
+                    # Colorato fin dal primo fotogramma: non era un nero ma lo sfondo scuro
+                    # dello spot successivo, quindi è uno stacco netto proprio lì
+                    tagli[k] = {"tipo": "scena", "a": tg["a"], "b": tg["a"], "b_base": tg["b"]}
+                elif abs(fine - tg["b"]) > 1e-6:
+                    tg["b_base"], tg["b"] = tg["b"], fine
         return tagli, scarto, len(campioni)
 
     # ── LETTURA TXT ───────────────────────────────────────────────────────
