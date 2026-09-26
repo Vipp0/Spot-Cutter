@@ -1,7 +1,7 @@
 # Changelog
 
-Modifiche successive alla release 1.2 (non ancora pubblicate su GitHub).
-Changes after release 1.2 (not yet published on GitHub).
+Modifiche successive alla release 1.2, pubblicate insieme nella release 1.3.2.
+Changes after release 1.2, published together in release 1.3.2.
 
 ---
 
