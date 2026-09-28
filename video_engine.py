@@ -265,8 +265,10 @@ class VideoEngine:
             tagli_riusciti = 0
             for i, spot in enumerate(spot_list, 1):
                 name_r = spot["n"]
-                name_c = re.sub(r'[\\/*?:"<>|]', "", name_r)
-                name_c = "Sconosciuto" if not name_c else name_c[:100]
+                # La "/" diventa un trattino ("Promo/teaser" -> "Promo-teaser"), gli altri
+                # caratteri vietati da Windows spariscono; i punti restano ("G.W. Electronics")
+                name_c = re.sub(r'[\\*?:"<>|]', "", name_r.replace("/", "-"))
+                name_c = name_c[:100].rstrip(". ") or "Sconosciuto"
 
                 r_s = punti[i - 1][1]
                 if i < len(spot_list):
@@ -284,8 +286,7 @@ class VideoEngine:
                                    else os.path.join(base_libreria, final_year))
                 os.makedirs(target_p, exist_ok=True)
 
-                nome_base  = os.path.splitext(name_c)[0]
-                nome_finale = f"{self._nome_con_canale(nome_base, vid)}{data_tag}"
+                nome_finale = f"{self._nome_con_canale(name_c, vid)}{data_tag}"
                 out_f      = get_unique_filename(target_p, nome_finale, ext=".mkv",
                                                  reserved=nomi_prenotati)
 
@@ -948,7 +949,7 @@ class VideoEngine:
         (["europ2", "europa 2"],                           "Europa 2"),
         (["videomusic"],                                   "VideoMusic"),
         (["italia 7", "italia7"],                          "Italia 7"),
-        (["tele+", "tele +", "telepiù", "sky"],           "Sky/Tele+"),
+        (["tele+", "tele +", "telepiù", "sky"],           "Tele+"),
     ]
 
     @staticmethod

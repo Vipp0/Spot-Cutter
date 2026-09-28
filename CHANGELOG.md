@@ -12,6 +12,15 @@ Changes after release 1.2, published together in release 1.3.2.
 - 🇮🇹 Canale ripetuto nel nome dei clip ("Promo X - Retequattro - Rete 4"): il canale scritto da mdeplo in coda al nome viene riconosciuto in ogni forma e scritto una volta sola nella forma standard ("Promo X - Rete 4")
 - 🇬🇧 Channel repeated in clip names ("Promo X - Retequattro - Rete 4"): the channel written by mdeplo at the end of the name is recognised in any form and written once in the standard form ("Promo X - Rete 4")
 
+- 🇮🇹 Nomi troncati all'ultimo punto: "Brainmost - G.W. Electronics - Milano" diventava "Brainmost - G.W", "166 1.2.3.4.5.6" perdeva il ".6". Ora il nome resta completo
+- 🇬🇧 Names cut at the last dot: "Brainmost - G.W. Electronics - Milano" became "Brainmost - G.W", "166 1.2.3.4.5.6" lost the ".6". The full name is now kept
+
+- 🇮🇹 La "/" nei nomi diventa un trattino ("Promo/teaser" → "Promo-teaser") invece di attaccare le parole ("Promoteaser")
+- 🇬🇧 A "/" in names becomes a hyphen ("Promo/teaser" → "Promo-teaser") instead of joining the words ("Promoteaser")
+
+- 🇮🇹 Il canale di Tele+ si scrive "Tele+": "Sky/Tele+" avrebbe creato una sottocartella al posto del nome del file
+- 🇬🇧 The Tele+ channel is written "Tele+": "Sky/Tele+" would have created a subfolder instead of the file name
+
 ---
 
 ## 🎬 Spot Cutter 1.3.3
