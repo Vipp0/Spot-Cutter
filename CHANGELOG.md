@@ -1,7 +1,7 @@
 # Changelog
 
-Modifiche successive alla release 1.2, pubblicate insieme nella release 1.3.2.
-Changes after release 1.2, published together in release 1.3.2.
+Modifiche successive alla release 1.2. Le versioni 1.3, 1.3.1 e 1.3.2 sono uscite insieme nella release 1.3.2; la 1.3.3 insieme alla 1.3.4.
+Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together as 1.3.2; version 1.3.3 together with 1.3.4.
 
 ---
 
