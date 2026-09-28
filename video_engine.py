@@ -242,7 +242,10 @@ class VideoEngine:
                     corr = (f", fine corretta da {tg['b_base']:.2f}s" if "b_base" in tg else "")
                     await self.log(f"Stacco {j} ({mmss}): nero {tg['a']:.2f}-{tg['b']:.2f}s "
                                    f"(sensibilità {tg['sens']}{corr})", "grey")
-                    punti.append((tg["a"] + v_cusc_f, max(0.0, tg["b"] - v_cusc_i)))
+                    # La fine del clip precedente resta dentro il nero: con un nero di soli
+                    # 3 fotogrammi il cuscinetto arriverebbe sul primo fotogramma dello spot dopo
+                    fine_prec = min(tg["a"] + v_cusc_f, tg["b"] - 0.02)
+                    punti.append((fine_prec, max(0.0, tg["b"] - v_cusc_i)))
                 else:
                     da_verificare += 1
                     motivo = ("stacco netto (cambio di scena)" if tg["tipo"] == "scena"

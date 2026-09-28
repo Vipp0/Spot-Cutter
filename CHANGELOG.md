@@ -5,6 +5,15 @@ Changes after release 1.2, published together in release 1.3.2.
 
 ---
 
+## 🎬 Spot Cutter 1.3.3
+
+### 🐛 Bug fix
+
+- 🇮🇹 Con un nero di soli 3 fotogrammi il clip precedente finiva con il primo fotogramma dello spot successivo: ora la fine del clip resta sempre dentro il nero
+- 🇬🇧 With a black only 3 frames long, the previous clip ended with the first frame of the next spot: the clip end now always stays inside the black
+
+---
+
 ## 🎬 Spot Cutter 1.3.2
 
 ### ✨ Miglioramenti del motore / Engine improvements
