@@ -5,6 +5,15 @@ Changes after release 1.2, published together in release 1.3.2.
 
 ---
 
+## 🎬 Spot Cutter 1.3.4
+
+### 🐛 Bug fix
+
+- 🇮🇹 Canale ripetuto nel nome dei clip ("Promo X - Retequattro - Rete 4"): il canale scritto da mdeplo in coda al nome viene riconosciuto in ogni forma e scritto una volta sola nella forma standard ("Promo X - Rete 4")
+- 🇬🇧 Channel repeated in clip names ("Promo X - Retequattro - Rete 4"): the channel written by mdeplo at the end of the name is recognised in any form and written once in the standard form ("Promo X - Rete 4")
+
+---
+
 ## 🎬 Spot Cutter 1.3.3
 
 ### 🐛 Bug fix

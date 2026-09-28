@@ -285,13 +285,7 @@ class VideoEngine:
                 os.makedirs(target_p, exist_ok=True)
 
                 nome_base  = os.path.splitext(name_c)[0]
-                channel    = self._extract_channel(vid)
-                # Aggiunge il canale solo se non è già presente nel nome dello spot
-                if channel and channel.lower() not in nome_base.lower():
-                    canale_tag = f" - {channel}"
-                else:
-                    canale_tag = ""
-                nome_finale = f"{nome_base}{canale_tag}{data_tag}"
+                nome_finale = f"{self._nome_con_canale(nome_base, vid)}{data_tag}"
                 out_f      = get_unique_filename(target_p, nome_finale, ext=".mkv",
                                                  reserved=nomi_prenotati)
 
@@ -936,6 +930,27 @@ class VideoEngine:
             return False
         
     # ── RILEVAMENTO CANALE ────────────────────────────────────────────────
+    CANALI = [
+        # RAI
+        (["raiuno", "rai uno", "rai 1", "rai1"],          "Rai 1"),
+        (["raidue", "rai due", "rai 2", "rai2"],          "Rai 2"),
+        (["raitre", "rai tre", "rai 3", "rai3"],          "Rai 3"),
+        # Mediaset
+        (["canale 5", "canale5"],                          "Canale 5"),
+        (["retequattro", "rete 4", "rete4", "rete quattro"], "Rete 4"),
+        (["italia 1", "italia1"],                          "Italia 1"),
+        # Locali e altri
+        (["antenna 3", "antenna3"],                        "Antenna 3"),
+        (["tmc", "telemontecarlo"],                        "TMC"),
+        (["odeon"],                                        "Odeon"),
+        (["tva", "televisione delle alpi"],                "TVA"),
+        (["fininvest"],                                    "Fininvest"),
+        (["europ2", "europa 2"],                           "Europa 2"),
+        (["videomusic"],                                   "VideoMusic"),
+        (["italia 7", "italia7"],                          "Italia 7"),
+        (["tele+", "tele +", "telepiù", "sky"],           "Sky/Tele+"),
+    ]
+
     @staticmethod
     def _extract_channel(name_r: str) -> str:
         """
@@ -943,30 +958,34 @@ class VideoEngine:
         Ritorna il nome canale formattato oppure "" se non trovato.
         """
         n = name_r.lower()
-        channels = [
-            # RAI
-            (["raiuno", "rai uno", "rai 1", "rai1"],          "Rai 1"),
-            (["raidue", "rai due", "rai 2", "rai2"],          "Rai 2"),
-            (["raitre", "rai tre", "rai 3", "rai3"],          "Rai 3"),
-            # Mediaset
-            (["canale 5", "canale5"],                          "Canale 5"),
-            (["retequattro", "rete 4", "rete4", "rete quattro"], "Rete 4"),
-            (["italia 1", "italia1"],                          "Italia 1"),
-            # Locali e altri
-            (["antenna 3", "antenna3"],                        "Antenna 3"),
-            (["tmc", "telemontecarlo"],                        "TMC"),
-            (["odeon"],                                        "Odeon"),
-            (["tva", "televisione delle alpi"],                "TVA"),
-            (["fininvest"],                                    "Fininvest"),
-            (["europ2", "europa 2"],                           "Europa 2"),
-            (["videomusic"],                                   "VideoMusic"),
-            (["italia 7", "italia7"],                          "Italia 7"),
-            (["tele+", "tele +", "telepiù", "sky"],           "Sky/Tele+"),
-        ]
-        for keywords, label in channels:
+        for keywords, label in VideoEngine.CANALI:
             if any(k in n for k in keywords):
                 return label
         return ""
+
+    @staticmethod
+    def _nome_con_canale(nome: str, vid: str) -> str:
+        """
+        Nome del clip con il canale del video, scritto una volta sola nella forma standard.
+        Il canale che mdeplo mette in coda al nome ("Promo X - Retequattro", anche seguito
+        da "(sponsorizzato da ...)") diventa la forma standard ("Promo X - Rete 4").
+        Se il nome cita già il canale in un altro punto ("Bumper ident Retequattro") resta
+        com'è; se non lo cita, il canale viene aggiunto in coda.
+        """
+        label = VideoEngine._extract_channel(vid)
+        if not label:
+            return nome
+        alias = next(k for k, lb in VideoEngine.CANALI if lb == label)
+        parti = nome.split(" - ")
+        for i, parte in enumerate(parti[1:], 1):
+            for a in alias:
+                if m := re.match(rf"{re.escape(a)}(?=\s*(\(|$))", parte, re.IGNORECASE):
+                    parti[i] = label + parte[m.end():]
+                    break
+        nome = " - ".join(parti)
+        if any(a in nome.lower() for a in alias):
+            return nome
+        return f"{nome} - {label}"
 
     # ── CATEGORIZZAZIONE SPOT ─────────────────────────────────────────────
     @staticmethod
