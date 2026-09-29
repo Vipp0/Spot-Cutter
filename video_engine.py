@@ -1192,6 +1192,15 @@ class VideoEngine:
                 righe.append(f"{m.group(1)} - {m.group(2).strip().strip('*_ ')}")
         return righe
 
+    @staticmethod
+    def _nomi_descrizione(desc: str) -> list[str]:
+        """
+        Nomi della lista "Contenuto della sequenza:" delle descrizioni senza timestamp
+        ("- Spot Aperol Barbieri"), in ordine; i separatori "****" tra le sequenze si saltano.
+        """
+        return [m.group(1).strip() for riga in desc.splitlines()
+                if (m := re.match(r"\s*[-–•]\s*(.*\w.*)$", riga))]
+
     # yt-dlp mette nei nomi dei file varianti "larghe" dei caratteri vietati da Windows
     _LARGHI = str.maketrans({"⧸": "/", "＂": '"', "：": ":", "？": "?", "＊": "*",
                              "｜": "|", "＜": "<", "＞": ">", "＼": "\\"})
@@ -1227,7 +1236,7 @@ class VideoEngine:
         uguale al nome del file (o di cui il nome è l'inizio, per i nomi troncati).
         Ritorna {"esito": "ok" | "no_timestamp" | "non_trovato" | "ambiguo" | "errore",
                  "messaggio": ..., "data" ("GG-MM-AAAA" dal titolo, o None) se il video è
-                 stato trovato, "txt" solo se ok}.
+                 stato trovato, "txt" solo se ok, "nomi" (lista senza orari) se no_timestamp}.
         solo_data: serve solo la data del titolo (verifica online), la descrizione non si legge.
         """
         c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -1307,7 +1316,7 @@ class VideoEngine:
             return {"esito": "errore", "messaggio": f"descrizione di \"{titolo}\" non letta ({e})"}
         righe = self._righe_txt(desc)
         if not righe:
-            return {"esito": "no_timestamp", "data": data,
+            return {"esito": "no_timestamp", "data": data, "nomi": self._nomi_descrizione(desc),
                     "messaggio": f"trovato \"{titolo}\" ({canale}), ma la descrizione non ha timestamp"}
         return {"esito": "ok", "txt": "\n".join(righe), "data": data,
                 "messaggio": f"trovato \"{titolo}\" ({canale}), {len(righe)} righe"}

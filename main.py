@@ -19,6 +19,7 @@ import asyncio
 import threading
 import subprocess
 import glob
+import html
 
 from datetime import datetime
 
@@ -861,6 +862,12 @@ class BlackdetectDialog(QDialog):
         self.vid_path  = vid_path
         self.txt_path  = txt_path
         self.settings  = settings
+        # Lista dei nomi dalla descrizione YouTube (video senza timestamp): ogni "+"
+        # scrive l'orario col nome successivo
+        self._nomi  = []
+        self._salti = 0          # spostamenti col pulsante (nomi senza un nero proprio)
+        self._ricerca = None     # (thread, worker) della ricerca su YouTube in corso
+        self.data_trovata = None # data dal titolo YouTube, applicata al salvataggio
         self.setWindowTitle(f"Tagli manuali — {os.path.basename(vid_path)}")
         self.setMinimumSize(820, 520)
         self.setModal(True)
@@ -934,6 +941,26 @@ class BlackdetectDialog(QDialog):
 
         right.addWidget(self._editor, stretch=1)
 
+        # Riga "prossimo nome" (i pulsanti compaiono solo con la lista dei nomi da YouTube)
+        nomi_row = QHBoxLayout()
+        self._lbl_nomi = QLabel("")
+        self._lbl_nomi.setWordWrap(True)
+        self._lbl_nomi.setStyleSheet("font-size: 11px;")
+        self._btn_indietro = QPushButton("⏮")
+        self._btn_indietro.setToolTip("Torna al nome precedente della lista")
+        self._btn_salta = QPushButton("⏭ Salta nome")
+        self._btn_salta.setToolTip("Salta il prossimo nome della lista\n"
+                                   "(es. uno spot attaccato al precedente, senza nero)")
+        self._btn_indietro.clicked.connect(lambda: self._sposta_nome(-1))
+        self._btn_salta.clicked.connect(lambda: self._sposta_nome(1))
+        self._btn_indietro.hide()
+        self._btn_salta.hide()
+        nomi_row.addWidget(self._lbl_nomi, stretch=1)
+        nomi_row.addWidget(self._btn_indietro)
+        nomi_row.addWidget(self._btn_salta)
+        right.addLayout(nomi_row)
+        self._editor.textChanged.connect(self._aggiorna_nomi)
+
         btn_row = QHBoxLayout()
         btn_save   = QPushButton("💾 Salva TXT")
         btn_open   = QPushButton("▶ Apri video")
@@ -955,6 +982,82 @@ class BlackdetectDialog(QDialog):
         self._sig_blacks_ready.connect(self._on_blacks_ready)
         # Avvia il blackdetect in background dopo che il dialog è visibile
         QTimer.singleShot(100, self._run_blackdetect)
+
+        # Senza txt: intanto cerca il video su YouTube (txt completo o lista dei nomi)
+        if not os.path.exists(txt_path) and hasattr(parent, "_avvia_ricerca_youtube"):
+            self._lbl_nomi.setText("🔎 Ricerca della lista dei nomi su YouTube...")
+            self._ricerca = parent._avvia_ricerca_youtube([os.path.basename(vid_path)],
+                                                          self._on_youtube)
+            self.finished.connect(self._stacca_ricerca)
+
+    # ── LISTA DEI NOMI DA YOUTUBE ─────────────────────────────────────────
+    def _stacca_ricerca(self):
+        if self._ricerca:
+            try:
+                self._ricerca[1].sig_uno.disconnect(self._on_youtube)
+            except (RuntimeError, TypeError):
+                pass
+            self._ricerca = None
+
+    def _solo_modello(self) -> bool:
+        """L'editor contiene ancora solo la riga iniziale vuota ("00:00 - ")."""
+        return self._editor.toPlainText().strip() in ("", "00:00 -")
+
+    @Slot(str, dict)
+    def _on_youtube(self, vid: str, r: dict):
+        self._ricerca = None
+        self.data_trovata = r.get("data")
+        if r["esito"] == "ok":
+            # La descrizione ha già i timestamp: txt completo, se non hai ancora scritto nulla
+            if self._solo_modello():
+                self._editor.setPlainText(r["txt"])
+                self._lbl_nomi.setText("✅ Trovato su YouTube il txt completo con i timestamp: "
+                                       "controllalo e premi Salva.")
+            else:
+                self._lbl_nomi.setText("ℹ️ Su YouTube c'è il txt completo con i timestamp "
+                                       "(🔎 Cerca su YouTube nell'editor txt): qui non l'ho inserito.")
+            return
+        if not r.get("nomi"):
+            self._lbl_nomi.setText(f"ℹ️ Nessuna lista di nomi su YouTube ({r['messaggio']}).")
+            return
+        self._nomi = r["nomi"]
+        if self._solo_modello():
+            # Il primo spot parte sempre da 00:00
+            self._editor.setPlainText(f"00:00 - {self._nomi[0]}")
+            cursor = self._editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self._editor.setTextCursor(cursor)
+        self._btn_indietro.show()
+        self._btn_salta.show()
+        self._aggiorna_nomi()
+
+    def _indice_nome(self) -> int:
+        """
+        Posizione del prossimo nome: si conta dalle righe con un orario già nell'editor,
+        così cancellando una riga sbagliata il nome torna giusto da solo.
+        """
+        righe = re.findall(r"^\s*\d{1,2}:\d{2}", self._editor.toPlainText(), re.M)
+        return len(righe) + self._salti
+
+    def _prossimo_nome(self) -> str:
+        i = self._indice_nome()
+        return self._nomi[i] if 0 <= i < len(self._nomi) else ""
+
+    def _sposta_nome(self, passo: int):
+        # Mai prima dell'inizio della lista
+        if self._indice_nome() + passo >= 0:
+            self._salti += passo
+        self._aggiorna_nomi()
+
+    def _aggiorna_nomi(self):
+        if not self._nomi:
+            return
+        i = self._indice_nome()
+        if i < len(self._nomi):
+            self._lbl_nomi.setText(f"📋 Prossimo nome: <b>{html.escape(self._nomi[i])}</b> "
+                                   f"({i + 1}/{len(self._nomi)}) — clicca un nero a sinistra")
+        else:
+            self._lbl_nomi.setText(f"✅ Tutti i {len(self._nomi)} nomi della lista sono inseriti.")
 
     def _run_blackdetect(self):
         """Lancia il blackdetect in un thread separato per non bloccare la UI."""
@@ -1013,7 +1116,8 @@ class BlackdetectDialog(QDialog):
             self._btn_layout.addWidget(btn)
 
     def _insert_timestamp(self, ts_str: str):
-        """Inserisce il timestamp nella riga corrente dell'editor."""
+        """Inserisce il timestamp (col prossimo nome della lista, se c'è) nella riga corrente."""
+        nome = self._prossimo_nome()
         cursor = self._editor.textCursor()
         # Va all'inizio della riga corrente
         cursor.movePosition(cursor.MoveOperation.StartOfLine)
@@ -1024,10 +1128,10 @@ class BlackdetectDialog(QDialog):
         if line_text:
             # Riga non vuota: vai alla fine e aggiungi nuova riga
             cursor.movePosition(cursor.MoveOperation.EndOfLine)
-            cursor.insertText(f"\n{ts_str} - ")
+            cursor.insertText(f"\n{ts_str} - {nome}")
         else:
             # Riga vuota: inserisci qui
-            cursor.insertText(f"{ts_str} - ")
+            cursor.insertText(f"{ts_str} - {nome}")
         self._editor.setTextCursor(cursor)
         self._editor.setFocus()
 
@@ -2384,6 +2488,7 @@ class SpotCutterApp(QMainWindow):
                 if v == vid:
                     self.state["queue_files"][i] = (v, txt_name, d)
                     break
+            self._applica_data_youtube(vid, dlg.data_trovata)
             self.render_queue()
             self._on_log(f"✅ TXT salvato per {vid}", "green")
 
@@ -2471,7 +2576,7 @@ class SpotCutterApp(QMainWindow):
         self._avvia_ricerca_youtube(mancanti, self._on_txt_trovato, self._on_cerca_txt_finita)
 
     def _avvia_ricerca_youtube(self, video: list, on_uno, on_fine=None, solo_data=False):
-        """Ricerca su YouTube in un thread a parte, un video alla volta."""
+        """Ricerca su YouTube in un thread a parte, un video alla volta. Ritorna (thread, worker)."""
         thread, worker = QThread(), TxtSearchWorker(video, solo_data)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -2484,6 +2589,7 @@ class SpotCutterApp(QMainWindow):
         self._ricerche_txt.append((thread, worker))
         thread.finished.connect(lambda: self._ricerche_txt.remove((thread, worker)))
         thread.start()
+        return thread, worker
 
     def _verifica_date_online(self):
         """
