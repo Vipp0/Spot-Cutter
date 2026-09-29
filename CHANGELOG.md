@@ -5,6 +5,18 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.6
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Ripresa dopo uno Stop** — premendo di nuovo Avvia i video già elaborati vengono saltati, e dopo uno Stop escono dalla coda come a fine elaborazione
+- 🇬🇧 **Resume after a Stop** — pressing Start again skips videos already processed, and after a Stop they leave the queue as they do when processing ends
+
+- 🇮🇹 **Nessun doppione per il video interrotto a metà** — il programma ricorda i clip già creati (anche se chiudi il programma o va via la corrente) e alla ripresa li rimuove prima di rifare il video, con gli stessi nomi
+- 🇬🇧 **No duplicates for a video stopped halfway** — the program remembers the clips already created (even if the program is closed or the power goes off) and on resume removes them before redoing the video, with the same names
+
+---
+
 ## 🎬 Spot Cutter 1.3.5
 
 ### ✨ Nuove funzionalità / New features

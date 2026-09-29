@@ -1958,24 +1958,24 @@ class SpotCutterApp(QMainWindow):
         else:
             self._on_log(f"🛑 INTERROTTA dopo {m}m {s_}s", "orange")
 
-        # Rimuove dalla coda i video completati con successo (presenti nello storico)
-        if successo:
-            storico_path = os.path.join(
-                self.state.get("work_dir", self.state.get("current_dir", "")),
-                "storico.json"
-            )
-            storico = {}
-            if os.path.exists(storico_path):
-                try:
-                    with open(storico_path, "r", encoding="utf-8") as _sf:
-                        storico = json.load(_sf)
-                except Exception:
-                    pass
-            self.state["queue_files"] = [
-                (v, t, d) for v, t, d in self.state["queue_files"]
-                if v not in storico
-            ]
-            self._on_stats_update()
+        # Rimuove dalla coda i video completati (presenti nello storico), anche dopo uno
+        # Stop: così premendo di nuovo Avvia si riparte da quelli che mancano
+        storico_path = os.path.join(
+            self.state.get("work_dir", self.state.get("current_dir", "")),
+            "storico.json"
+        )
+        storico = {}
+        if os.path.exists(storico_path):
+            try:
+                with open(storico_path, "r", encoding="utf-8") as _sf:
+                    storico = json.load(_sf)
+            except Exception:
+                pass
+        self.state["queue_files"] = [
+            (v, t, d) for v, t, d in self.state["queue_files"]
+            if v not in storico
+        ]
+        self._on_stats_update()
 
 
         # Reset UI

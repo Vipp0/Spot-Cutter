@@ -118,6 +118,12 @@ class VideoEngine:
         # Nomi assegnati ma non ancora creati da FFmpeg: evita che due spot
         # con lo stesso nome (es. bumper ripetuti) si sovrascrivano nei tagli paralleli
         nomi_prenotati: set[str] = set()
+        # Ripresa dopo uno Stop: i video nello storico sono già fatti e si saltano;
+        # tagli_in_corso.json ricorda i clip già creati di un video lasciato a metà,
+        # che vengono rimossi prima di rifarlo (niente doppioni "(2)")
+        cartella_lib  = state.get("work_dir", state["current_dir"])
+        storico_path  = os.path.join(cartella_lib, "storico.json")
+        in_corso_path = os.path.join(cartella_lib, "tagli_in_corso.json")
 
         total_videos = len(queue_snapshot)
 
@@ -133,6 +139,13 @@ class VideoEngine:
                 break 
 
             if not txt:
+                continue
+
+            if vid in self._leggi_json(storico_path):
+                await self.log(f"⏭️ {vid}: già elaborato, saltato "
+                               f"(per rifarlo toglilo dallo storico).", "grey")
+                if status_cb:
+                    await status_cb(idx, "✅ Già elaborato", "#4CAF50")
                 continue
 
             # --- LOGICA DI INIZIO VIDEO ---
@@ -164,6 +177,19 @@ class VideoEngine:
             data_tag = f" [{data_finale}]" if data_finale else ""
 
             await self.log(f"🎬 Elaborazione: {vid}...", "blue")
+            precedenti = self._leggi_json(in_corso_path).get(vid, [])
+            if precedenti:
+                rimossi = 0
+                for clip in precedenti:
+                    try:
+                        if os.path.exists(clip):
+                            os.remove(clip)
+                            rimossi += 1
+                    except OSError as e:
+                        await self.log(f"⚠️ Impossibile rimuovere {os.path.basename(clip)}: {e}", "orange")
+                self._aggiorna_in_corso(in_corso_path, vid, None)
+                await self.log(f"🧹 Ripresa dopo un'interruzione: rimossi {rimossi} clip "
+                               f"del tentativo precedente, il video viene rifatto da capo.", "grey")
             if colore_data == "orange":
                 await self.log(f"⚠️ Data in {vid} potrebbe essere ambigua, verificare.", "orange")
             duration = get_video_duration(video_path_completo)
@@ -362,6 +388,10 @@ class VideoEngine:
                         proc_list=active_procs
                     )
                     elapsed = round(time.time() - t_start, 1)
+                    if ok:
+                        # Annotato anche se lo Stop arriva ora: il clip esiste e alla
+                        # ripresa va tolto prima di rifare il video
+                        self._aggiorna_in_corso(in_corso_path, vid, job["out_f"])
                     if ok and state["running"]:
                         await self.log(
                             f"✅ Tagliato {job['idx_spot']}/{total_jobs}: "
@@ -408,6 +438,8 @@ class VideoEngine:
                     pass
 
             if state["running"]:
+                # Video arrivato in fondo: i suoi clip sono definitivi
+                self._aggiorna_in_corso(in_corso_path, vid, None)
                 # tagli_riusciti è già accumulato batch per batch nel loop sopra, quindi qui è aggiornato con il totale reale dei tagli riusciti.
 
                 if tagli_riusciti == 0:
@@ -479,6 +511,33 @@ class VideoEngine:
 
         return state.get("running", True)
     
+    @staticmethod
+    def _leggi_json(path: str) -> dict:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    @staticmethod
+    def _aggiorna_in_corso(path: str, vid: str, clip: str | None):
+        """Aggiunge un clip creato al video in corso, o con clip=None chiude la sua voce."""
+        dati = VideoEngine._leggi_json(path)
+        if clip is None:
+            if vid not in dati:
+                return
+            dati.pop(vid)
+        else:
+            dati.setdefault(vid, []).append(clip)
+        try:
+            if dati:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(dati, f, indent=2, ensure_ascii=False)
+            elif os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
     @staticmethod
     def _write_storico(storico_path: str, vid: str, n_spot: int, canale: str, anno: str):
         """Aggiunge una voce al file storico.json nella Libreria Spot."""
