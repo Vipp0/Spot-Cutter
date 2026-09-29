@@ -24,8 +24,8 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ### 🐛 Bug fix
 
-- 🇮🇹 Canale ripetuto nel nome dei clip ("Promo X - Retequattro - Rete 4"): il canale scritto da mdeplo in coda al nome viene riconosciuto in ogni forma e scritto una volta sola nella forma standard ("Promo X - Rete 4")
-- 🇬🇧 Channel repeated in clip names ("Promo X - Retequattro - Rete 4"): the channel written by mdeplo at the end of the name is recognised in any form and written once in the standard form ("Promo X - Rete 4")
+- 🇮🇹 Canale ripetuto nel nome dei clip ("Promo X - Retequattro - Rete 4"): il canale già presente in coda al nome viene riconosciuto in ogni forma e scritto una volta sola nella forma standard ("Promo X - Rete 4")
+- 🇬🇧 Channel repeated in clip names ("Promo X - Retequattro - Rete 4"): the channel already present at the end of the name is recognised in any form and written once in the standard form ("Promo X - Rete 4")
 
 - 🇮🇹 Nomi troncati all'ultimo punto: "Brainmost - G.W. Electronics - Milano" diventava "Brainmost - G.W", "166 1.2.3.4.5.6" perdeva il ".6". Ora il nome resta completo
 - 🇬🇧 Names cut at the last dot: "Brainmost - G.W. Electronics - Milano" became "Brainmost - G.W", "166 1.2.3.4.5.6" lost the ".6". The full name is now kept
