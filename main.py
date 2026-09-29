@@ -144,13 +144,16 @@ class YTWorker(QObject):
     sig_log      = Signal(str, str)
     sig_progress = Signal(float, str)
     sig_finished = Signal(list)   # lista di (vid, txt) o lista vuota
-    
-    def __init__(self, url: str, output_dir: str, state: dict, direct_download: bool = False):
+    sig_video    = Signal(list)   # playlist: [(vid, txt)] appena ogni video è scaricato
+
+    def __init__(self, url: str, output_dir: str, state: dict, direct_download: bool = False,
+                 playlist: bool = False):
         super().__init__()
         self.url            = url
         self.output_dir     = output_dir
         self.state          = state
         self.direct_download = direct_download
+        self.playlist       = playlist
 
     @Slot()
     def run(self):
@@ -201,7 +204,21 @@ class YTWorker(QObject):
             self.sig_progress.emit(value, label)
 
         engine = VideoEngine(log_cb=cb_log, progress_cb=cb_progress)
-        
+
+        if self.playlist:
+            # Un video alla volta: ognuno va subito in coda (import) o nell'elenco finale
+            # (download diretto); il riepilogo lo scrive il motore nel log
+            scaricati = []
+
+            async def cb_video(res):
+                scaricati.extend(res)
+                self.sig_video.emit(res)
+
+            await engine.download_playlist(self.url, self.output_dir, self.state,
+                                           not self.direct_download, cb_video)
+            self.result = scaricati if self.direct_download else []
+            return
+
         # 1. Chiamiamo il download e ci fidiamo SOLO del motore
         # Il motore ora gestisce internamente sia il download nuovo 
         # sia il caso "già scaricato" se usiamo la logica corretta.
@@ -1040,6 +1057,7 @@ class SpotCutterApp(QMainWindow):
     _sig_finished        = Signal(bool, float)
     _sig_render_queue    = Signal()
     _sig_yt_finished     = Signal(list)
+    _sig_yt_video        = Signal(list)
     _sig_yt_info         = Signal(str, object)
     _sig_duration        = Signal(float, int)
 
@@ -1072,6 +1090,9 @@ class SpotCutterApp(QMainWindow):
         self.settings_storage = QSettings("SpotCutter", "SpotCutterUltra")
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
+        self._yt_playlist = False           # scelta "Intera playlist" per il prossimo download
+        self._yt_playlist_attiva = False    # download di playlist in corso
+        self._yt_playlist_aggiunti = 0      # video della playlist entrati in coda
 
         self.state = {
             "running":       False,
@@ -1103,6 +1124,7 @@ class SpotCutterApp(QMainWindow):
         self._sig_finished.connect(self._on_finished)
         self._sig_render_queue.connect(self.render_queue)
         self._sig_yt_finished.connect(self._on_yt_finished)
+        self._sig_yt_video.connect(self._on_yt_video)
         self._sig_yt_info.connect(self._yt_after_info) # Aggiunto qui
         self._sig_duration.connect(self._on_duration_ready)
 
@@ -1118,6 +1140,7 @@ class SpotCutterApp(QMainWindow):
             except: pass
 
         QTimer.singleShot(800, self._startup_checks) 
+        QTimer.singleShot(1200, self._proponi_ripresa_sessione)
 
     def _update_duration_label(self):
         """Calcola in background la durata totale dei video in coda."""
@@ -1223,16 +1246,8 @@ class SpotCutterApp(QMainWindow):
         if not path:
             return
         try:
-            session = {
-                "current_dir": self.state.get("current_dir", ""),
-                "work_dir":    self.state.get("work_dir", ""),
-                "queue":       [
-                    {"vid": v, "txt": t, "manual_date": d}
-                    for v, t, d in self.state["queue_files"]
-                ]
-            }
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(session, f, indent=2, ensure_ascii=False)
+                json.dump(self._dati_sessione(), f, indent=2, ensure_ascii=False)
             self._on_log(f"💾 Sessione salvata: {os.path.basename(path)}", "green")
         except Exception as e:
             self._on_log(f"⚠️ Errore salvataggio sessione: {e}", "red")
@@ -1246,24 +1261,78 @@ class SpotCutterApp(QMainWindow):
             return
         try:
             with open(path, "r", encoding="utf-8") as f:
-                session = json.load(f)
-            # Ripristina cartella sorgente e destinazione
-            current_dir = session.get("current_dir", "")
-            work_dir    = session.get("work_dir", "")
-            if current_dir and os.path.exists(current_dir):
-                self.state["current_dir"] = current_dir
-            if work_dir and os.path.exists(work_dir):
-                self.state["work_dir"] = work_dir
-                self.work_dir = work_dir
-            # Ripristina coda
-            self.state["queue_files"] = [
-                (item["vid"], item.get("txt"), item.get("manual_date"))
-                for item in session.get("queue", [])
-            ]
-            self.render_queue()
+                self._applica_sessione(json.load(f))
             self._on_log(f"📂 Sessione caricata: {len(self.state['queue_files'])} video", "green")
         except Exception as e:
             self._on_log(f"⚠️ Errore caricamento sessione: {e}", "red")
+
+    # ── SESSIONE AUTOMATICA ───────────────────────────────────────────────
+    # La coda viene salvata a ogni cambiamento in %APPDATA%\SpotCutter (sopravvive anche
+    # al cambio di versione del programma); alla riapertura si può riprenderla.
+
+    def _dati_sessione(self) -> dict:
+        return {
+            "current_dir": self.state.get("current_dir", ""),
+            "work_dir":    self.state.get("work_dir", ""),
+            "queue":       [{"vid": v, "txt": t, "manual_date": d}
+                            for v, t, d in self.state["queue_files"]],
+        }
+
+    def _applica_sessione(self, session: dict):
+        current_dir = session.get("current_dir", "")
+        work_dir    = session.get("work_dir", "")
+        if current_dir and os.path.exists(current_dir):
+            self.state["current_dir"] = current_dir
+        if work_dir and os.path.exists(work_dir):
+            self.state["work_dir"] = work_dir
+            self.work_dir = work_dir
+        self.state["queue_files"] = [
+            (item["vid"], item.get("txt"), item.get("manual_date"))
+            for item in session.get("queue", [])
+        ]
+        self.render_queue()
+
+    @staticmethod
+    def _file_sessione_auto() -> str:
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "SpotCutter", "sessione_auto.json")
+
+    def _salva_sessione_auto(self):
+        # Finché non si è risposto alla domanda di ripresa, il file dell'ultima volta non si tocca
+        if not getattr(self, "_sessione_auto_pronta", False):
+            return
+        path = self._file_sessione_auto()
+        try:
+            if self.state.get("queue_files"):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(self._dati_sessione(), f, indent=2, ensure_ascii=False)
+            elif os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+    def _proponi_ripresa_sessione(self):
+        try:
+            path = self._file_sessione_auto()
+            if os.path.exists(path) and not self.state.get("queue_files"):
+                with open(path, "r", encoding="utf-8") as f:
+                    session = json.load(f)
+                n = len(session.get("queue", []))
+                if n:
+                    cartella = session.get("current_dir", "")
+                    dove = f" dalla cartella\n{cartella}" if cartella else ""
+                    risposta = QMessageBox.question(
+                        self, "Riprendere la coda?",
+                        f"L'ultima volta erano in coda {n} video{dove}.\n\nVuoi riprendere da lì?")
+                    if risposta == QMessageBox.StandardButton.Yes:
+                        self._sessione_auto_pronta = True
+                        self._applica_sessione(session)
+                        self._on_log(f"📂 Coda dell'ultima volta ripresa: {n} video.", "green")
+        except (OSError, ValueError):
+            pass
+        finally:
+            self._sessione_auto_pronta = True
 
     def _on_open_storico(self):
         """Apre il dialog dello storico elaborazioni."""
@@ -1729,6 +1798,7 @@ class SpotCutterApp(QMainWindow):
 
     @Slot()
     def render_queue(self):
+        self._salva_sessione_auto()
         # Pulizia sicura della coda
         while self._queue_layout.count() > 1:
             item = self._queue_layout.takeAt(0)
@@ -2055,6 +2125,9 @@ class SpotCutterApp(QMainWindow):
         self._btn_yt.setText("▶ IMPORTA DA YT")
         self._on_progress(0, "Pronto.")
         
+        playlist = self._yt_playlist_attiva
+        self._yt_playlist_attiva = False
+
         # --- LOGICA DOWNLOAD DIRETTO (Pillola Destra) ---
         is_direct = getattr(self, "_is_direct_download", False)
         self._is_direct_download = False # Reset immediato del flag
@@ -2088,30 +2161,42 @@ class SpotCutterApp(QMainWindow):
         # ------------------------------------------------
 
         # Logica standard per IMPORTA (Pillola Sinistra)
-        added_count = 0
-        if result:
-            for vid, txt in result:
-                if any(item[0] == vid for item in self.state["queue_files"]):
-                    self._on_log(f"⚠️ {vid} è già presente nella lista attuale.", "orange")
-                    continue
-                    
-                self.state["queue_files"].append((vid, txt, None))
-                added_count += 1
-            
-            if added_count > 0:
-                s = "o" if added_count == 1 else "i"
-                msg = f"✅ {added_count} vide{s} aggiunt{s} alla coda con successo."
-                self._on_log(msg, "green")
+        if playlist:
+            # Playlist: i video sono già entrati in coda uno alla volta (_on_yt_video)
+            added_count = self._yt_playlist_aggiunti
         else:
-            self._on_log("ℹ️ Nessun nuovo video aggiunto (già scaricato o file non trovato).", "gray")
-                
+            added_count = self._aggiungi_scaricati(result)
+            if not result:
+                self._on_log("ℹ️ Nessun nuovo video aggiunto (già scaricato o file non trovato).", "gray")
+
         self._sync_buttons()
         self.render_queue()
 
         # Avvio automatico dopo import YouTube se abilitato nelle impostazioni
-        _added = added_count if 'added_count' in dir() else 0
-        if self._s.get("auto_start_after_yt", False) and _added > 0:
+        if self._s.get("auto_start_after_yt", False) and added_count > 0:
             self._on_run()
+
+    def _aggiungi_scaricati(self, result: list) -> int:
+        """Mette in coda i video scaricati (vid, txt); ritorna quanti sono stati aggiunti."""
+        added_count = 0
+        for vid, txt in result or []:
+            if any(item[0] == vid for item in self.state["queue_files"]):
+                self._on_log(f"⚠️ {vid} è già presente nella lista attuale.", "orange")
+                continue
+            self.state["queue_files"].append((vid, txt, None))
+            added_count += 1
+        if added_count > 0:
+            s = "o" if added_count == 1 else "i"
+            self._on_log(f"✅ {added_count} vide{s} aggiunt{s} alla coda con successo.", "green")
+        return added_count
+
+    @Slot(list)
+    def _on_yt_video(self, result: list):
+        """Playlist: un video appena scaricato entra subito in coda (solo in modalità import)."""
+        if getattr(self, "_is_direct_download", False):
+            return
+        self._yt_playlist_aggiunti += self._aggiungi_scaricati(result)
+        self.render_queue()
 
     # ══════════════════════════════════════════════════════════════════════
     # HANDLERS — Bottoni
@@ -2557,6 +2642,7 @@ class SpotCutterApp(QMainWindow):
                 self._on_log("🔗 Scelta: Video singolo.", "cyan")
             elif msg_box.clickedButton() == btn_playlist:
                 final_url = url
+                self._yt_playlist = True
                 self._on_log("🔗 Scelta: Intera playlist.", "cyan")
             else:
                 # Annullato: ripristina entrambi i bottoni
@@ -2582,6 +2668,7 @@ class SpotCutterApp(QMainWindow):
                 self._on_progress(0, "Download annullato.")
                 self._is_direct_download = False
                 return
+            self._yt_playlist = True
 
         # Avviamo il download con il link definitivo
         self._start_yt_download(final_url)
@@ -2602,7 +2689,12 @@ class SpotCutterApp(QMainWindow):
             os.makedirs(output_dir, exist_ok=True)
         else:
             output_dir = self.state["current_dir"]
-        self._yt_worker = YTWorker(url, output_dir, self.state, direct_download=is_direct)
+        playlist = self._yt_playlist
+        self._yt_playlist = False
+        self._yt_playlist_attiva = playlist
+        self._yt_playlist_aggiunti = 0
+        self._yt_worker = YTWorker(url, output_dir, self.state, direct_download=is_direct,
+                                   playlist=playlist)
         self._yt_thread = QThread()
         self._yt_worker.moveToThread(self._yt_thread)
 
@@ -2612,6 +2704,7 @@ class SpotCutterApp(QMainWindow):
         self._yt_worker.sig_log.connect(self._sig_log.emit)
         self._yt_worker.sig_progress.connect(self._sig_progress.emit)
         self._yt_worker.sig_finished.connect(self._sig_yt_finished.emit)
+        self._yt_worker.sig_video.connect(self._sig_yt_video.emit)
         # ──────────────────────────────────────────────────────────────────────
 
         # Gestione chiusura thread (rimane invariata)

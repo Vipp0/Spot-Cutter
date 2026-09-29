@@ -63,6 +63,7 @@ class VideoEngine:
         self.progress = progress_cb
         self._current_proc  = None
         self._running = True   # verrà sincronizzato con state["running"]
+        self._prefisso_progresso = ""   # "Playlist 3/100 · " durante una playlist
 
         self.ytdlp_bin  = get_ytdlp_path()
         self.ffmpeg_bin = get_tool_path("ffmpeg")
@@ -1252,6 +1253,77 @@ class VideoEngine:
                 "data": data if colore == "green" else None,
                 "messaggio": f"trovato \"{titolo}\" ({canale}), {len(righe)} righe"}
 
+    # ── DOWNLOAD PLAYLIST ─────────────────────────────────────────────────
+    async def elenco_playlist(self, url: str) -> list[dict] | None:
+        """Video della playlist (anche da un link "watch?v=...&list=..."), senza scaricarli."""
+        c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        try:
+            p = await asyncio.create_subprocess_exec(
+                self.ytdlp_bin, "--flat-playlist", "--yes-playlist", "--no-warnings",
+                "--encoding", "utf-8", "--print", "%(id)s\t%(title)s", url,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                creationflags=c_flags)
+            out, _ = await asyncio.wait_for(p.communicate(), 180)
+        except Exception as e:
+            await self.log(f"⚠️ Elenco della playlist non letto: {e}", "red")
+            return None
+        voci = []
+        for riga in out.decode("utf-8", errors="replace").splitlines():
+            vid_id, _, titolo = riga.partition("\t")
+            if vid_id.strip():
+                voci.append({"id": vid_id.strip(), "titolo": titolo.strip()})
+        return voci
+
+    async def download_playlist(self, url: str, output_dir: str, state: dict,
+                                generate_txt: bool, video_cb) -> dict | None:
+        """
+        Scarica la playlist un video alla volta, con lo stesso procedimento del video singolo
+        (txt compreso). video_cb(risultato) viene chiamata appena ogni video è pronto, così
+        finisce subito in coda. I video già in archive.txt vengono saltati: rimettendo lo
+        stesso link dopo uno Stop si riparte dal primo che manca.
+        """
+        voci = await self.elenco_playlist(url)
+        if not voci:
+            await self.log("⚠️ Nessun video trovato nella playlist.", "orange")
+            return None
+        archivio = set()
+        try:
+            with open(os.path.join(output_dir, "archive.txt"), "r", encoding="utf-8") as f:
+                archivio = {r.split()[1] for r in f if len(r.split()) == 2}
+        except OSError:
+            pass
+
+        n = len(voci)
+        esito = {"totale": n, "scaricati": 0, "saltati": 0, "errori": 0}
+        await self.log(f"📃 Playlist: {n} video.", "cyan")
+        try:
+            for i, v in enumerate(voci, 1):
+                if not state.get("running", True):
+                    break
+                self._prefisso_progresso = f"Playlist {i}/{n} · "
+                if v["id"] in archivio:
+                    esito["saltati"] += 1
+                    await self.log(f"⏭️ Playlist {i}/{n}: {v['titolo']} — già scaricato.", "grey")
+                    continue
+                await self.log(f"📃 Playlist {i}/{n}: {v['titolo']}", "cyan")
+                risultato = await self.download_youtube(
+                    f"https://www.youtube.com/watch?v={v['id']}", output_dir, state, generate_txt)
+                if risultato:
+                    esito["scaricati"] += 1
+                    await video_cb(risultato)
+                elif state.get("running", True):
+                    esito["errori"] += 1
+        finally:
+            self._prefisso_progresso = ""
+        esito["interrotta"] = not state.get("running", True)
+        await self.log(
+            f"📃 Playlist {'interrotta' if esito['interrotta'] else 'finita'}: "
+            f"{esito['scaricati']} scaricati, {esito['saltati']} già presenti"
+            + (f", {esito['errori']} non riusciti" if esito["errori"] else "")
+            + (" — rimetti lo stesso link per riprendere." if esito["interrotta"] else "."),
+            "orange" if esito["interrotta"] or esito["errori"] else "green")
+        return esito
+
     # ── DOWNLOAD YOUTUBE ──────────────────────────────────────────────────
     async def download_youtube(self, url: str, output_dir: str, state: dict,
                                generate_txt: bool = True) -> list[tuple[str, str | None]] | None:
@@ -1344,7 +1416,7 @@ class VideoEngine:
                                     if m:
                                         try:
                                             p = float(m.group(1)) / 100.0
-                                            await self.progress(p, f"⬇️ {int(p * 100)}% — {video_title}")
+                                            await self.progress(p, f"{self._prefisso_progresso}⬇️ {int(p * 100)}% — {video_title}")
                                         except ValueError:
                                             pass
                                 break

@@ -15,6 +15,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Nessun doppione per il video interrotto a metà** — il programma ricorda i clip già creati (anche se chiudi il programma o va via la corrente) e alla ripresa li rimuove prima di rifare il video, con gli stessi nomi
 - 🇬🇧 **No duplicates for a video stopped halfway** — the program remembers the clips already created (even if the program is closed or the power goes off) and on resume removes them before redoing the video, with the same names
 
+- 🇮🇹 **Playlist intere** — una playlist (o un video di una playlist, scegliendo "Intera playlist") viene scaricata un video alla volta, ognuno con il suo txt e la sua data, ed entra in coda appena pronto; la barra mostra "Playlist 12/100"
+- 🇬🇧 **Whole playlists** — a playlist (or a video of a playlist, choosing "Whole playlist") is downloaded one video at a time, each with its txt and date, and joins the queue as soon as it is ready; the bar shows "Playlist 12/100"
+
+- 🇮🇹 **Playlist interrotta? Si riprende** — dopo uno Stop basta rimettere lo stesso link: i video già scaricati vengono saltati e quello interrotto riparte da dove era arrivato
+- 🇬🇧 **Playlist stopped? Just resume** — after a Stop, paste the same link again: videos already downloaded are skipped and the interrupted one continues where it left off
+
+- 🇮🇹 **Coda salvata in automatico** — la coda viene salvata a ogni cambiamento; alla riapertura il programma chiede se riprendere quella dell'ultima volta (vale anche dopo aver installato una versione nuova)
+- 🇬🇧 **Queue saved automatically** — the queue is saved on every change; on reopening the program asks whether to resume the last one (also after installing a new version)
+
 ---
 
 ## 🎬 Spot Cutter 1.3.5
