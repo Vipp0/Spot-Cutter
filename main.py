@@ -51,7 +51,7 @@ for exe in ("ffmpeg.exe", "ffprobe.exe"):
 # ── IMPORT MODULI PROGETTO ─────────────────────────────────────────────────
 from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
-    get_unique_filename, get_video_duration,
+    get_unique_filename, get_video_duration, righe_txt_ignorate,
     parse_settings, load_settings, save_settings,
 )
 from video_engine import VideoEngine
@@ -359,14 +359,14 @@ class VideoCard(QFrame):
 
         # Impostazione iniziale dei testi e degli stili
         self.txt_part.setText(f"📄 {'TXT OK' if has_txt else 'NO TXT'}")
+        # Tooltip anteprima TXT (prima dei colori: trova anche le righe ignorate)
+        self._txt_ignorate = []
+        self._update_txt_tooltip()
         self.set_status(status_text, status_color)
-        
+
         # Click eventi
         self.txt_part.mousePressEvent = lambda e: self.sig_edit_txt.emit(self.vid)
         self.date_part.mousePressEvent = lambda e: self.sig_edit_date.emit(self.idx)
-
-        # Tooltip anteprima TXT
-        self._update_txt_tooltip()
 
     def _update_txt_tooltip(self):
         """Mostra le prime 8 righe del TXT come tooltip sulla pillola sinistra."""
@@ -386,6 +386,17 @@ class VideoCard(QFrame):
             preview = "\n".join(lines[:8])
             if len(lines) > 8:
                 preview += f"\n... ({len(lines) - 8} righe in più)"
+            # Righe che non diventano un taglio: pillola arancione ed elenco nel tooltip
+            self._txt_ignorate = righe_txt_ignorate(txt_path)
+            if self._txt_ignorate:
+                self.txt_part.setText("📄 TXT OK ⚠️")
+                elenco = "\n".join(f"  · {r}" for r in self._txt_ignorate[:8])
+                if len(self._txt_ignorate) > 8:
+                    elenco += f"\n  · ... e altre {len(self._txt_ignorate) - 8}"
+                preview = (f"⚠️ Righe ignorate, non nel formato \"mm:ss - Nome\" "
+                           f"({len(self._txt_ignorate)}):\n{elenco}\n"
+                           f"Se sono spot, restano attaccati al precedente. "
+                           f"Clicca per correggere.\n\n{preview}")
             self.txt_part.setToolTip(preview)
         except Exception:
             self.txt_part.setToolTip("Impossibile leggere il file TXT.")
@@ -405,8 +416,8 @@ class VideoCard(QFrame):
         COLOR_ARANCIO = "#FFB74D" # Arancio pesca
         COLOR_BLU     = "#42A5F5" # Blu pastello
         
-        # 1. Sinistra (TXT): Verde se OK, Rosso se manca
-        txt_bg = COLOR_VERDE if has_txt else COLOR_ROSSO
+        # 1. Sinistra (TXT): Verde se OK, Arancio se ha righe ignorate, Rosso se manca
+        txt_bg = (COLOR_ARANCIO if self._txt_ignorate else COLOR_VERDE) if has_txt else COLOR_ROSSO
         
         # 2. Destra (DATA): Basata sulle icone
         if "✅" in text:

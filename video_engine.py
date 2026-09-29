@@ -26,7 +26,7 @@ def get_ytdlp_path() -> str:
 from utils import (
     get_seconds, get_unique_filename, get_video_duration,
     safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
-    get_tool_path
+    get_tool_path, RIGA_TXT, righe_txt_ignorate
 )
 
 # Saturazione media (0-~180) sopra la quale un fotogramma scuro non è nero ma contenuto:
@@ -132,12 +132,10 @@ class VideoEngine:
             # --- AGGIORNAMENTO PROGRESSO GLOBALE (v0.86) ---
             if global_progress_cb:
                 await global_progress_cb(idx, total_videos)
-            # Controlla interruzione ad ogni video
-            if not state["running"]: 
-                # 🔵 NOTIFICA INTERRUZIONE (Se l'utente preme stop)
-                if status_cb:
-                    await status_cb(idx, "🛑 Interrotto", "orange")
-                break 
+            # Controlla interruzione ad ogni video. Il video fermato a metà ha già il suo
+            # "Interrotto": questo (idx) non è mai partito e resta com'è
+            if not state["running"]:
+                break
 
             if not txt:
                 continue
@@ -218,7 +216,11 @@ class VideoEngine:
 
                 ok = await self._create_master(video_path_completo, master, duration, state, c_flags)
                 if not ok:
-                    # Se fallisce la creazione del master, segniamo l'errore
+                    # Se fallisce la creazione del master, segniamo l'errore (o lo Stop)
+                    if not state["running"]:
+                        if status_cb:
+                            await status_cb(idx, "🛑 Interrotto", "orange")
+                        break
                     if status_cb:
                         await status_cb(idx, "❌ Errore Master", "red")
                     continue
@@ -250,6 +252,15 @@ class VideoEngine:
                     await status_cb(idx, "⚠️ Errore TXT", "orange")
                 continue
             await self.log(f"✅ Trovati {len(spot_list)} segmenti in {txt}.", "white")
+            ignorate = righe_txt_ignorate(txt_path_completo)
+            if ignorate:
+                await self.log(f"⚠️ Righe del txt ignorate perché non nel formato \"mm:ss - Nome\" "
+                               f"({len(ignorate)}): se sono spot, restano attaccati al precedente.",
+                               "orange")
+                for riga in ignorate[:10]:
+                    await self.log(f"   · {riga}", "orange")
+                if len(ignorate) > 10:
+                    await self.log(f"   · ... e altre {len(ignorate) - 10}", "orange")
 
             # ── 3b. SCEGLI IL NERO DI OGNI STACCO ─────────────────────────
             # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
@@ -424,6 +435,8 @@ class VideoEngine:
             await asyncio.gather(*[_run_one(j) for j in coda])
             if not state["running"]:
                 await self.log("🛑 Interruzione durante taglio spot", "orange")
+                if status_cb:
+                    await status_cb(idx, "🛑 Interrotto", "orange")
 
             # ── 5. PULIZIA E SPOSTAMENTO ──────────────────────────────────
             if master and os.path.exists(master):
@@ -900,7 +913,7 @@ class VideoEngine:
             spot_list = []
             with open(txt_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    if mm := re.search(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(.+)", line):
+                    if mm := RIGA_TXT.search(line):
                         spot_list.append({
                             "t": get_seconds(mm.group(1)),
                             "n": mm.group(2).strip()

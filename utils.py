@@ -85,6 +85,22 @@ def get_seconds(time_str):
         return parts[0]
     except: return 0.0
 
+# Riga del txt degli spot che il programma taglia: "mm:ss - Nome" (anche "m:ss", "h:mm:ss")
+RIGA_TXT = re.compile(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*(.+)")
+
+def righe_txt_ignorate(txt_path) -> list[str]:
+    """
+    Righe del txt che non sono nel formato "mm:ss - Nome" e quindi non diventano un taglio
+    (quello spot resterebbe attaccato al precedente). Non conta le righe vuote e quelle
+    senza lettere né cifre, come i separatori "****".
+    """
+    try:
+        with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
+            return [l.strip() for l in f
+                    if any(c.isalnum() for c in l) and not RIGA_TXT.search(l)]
+    except OSError:
+        return []
+
 def is_valid_date(g, m, a):
     try:
         day, month, year = int(g), int(m), int(a)

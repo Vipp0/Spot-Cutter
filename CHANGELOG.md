@@ -29,6 +29,14 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Ricerca txt per i file doppioni** — i nomi con un segno di doppione in fondo ("... e prom[2]", "(2)", "- Copia") non impediscono più di trovare il video: se il nome intero non trova nulla, la ricerca riprova senza quel segno
 - 🇬🇧 **Txt search for duplicate files** — names ending with a duplicate mark ("... e prom[2]", "(2)", "- Copy") no longer prevent finding the video: if the full name finds nothing, the search retries without that mark
 
+- 🇮🇹 **Pillola TXT arancione per le righe ignorate** — se il txt ha righe non nel formato "mm:ss - Nome" (es. "1.05 Spot…", "01:30 Spot…" senza trattino), la pillola diventa arancione e il tooltip le elenca; lo stesso elenco compare nel log quando il video parte. Prima venivano saltate in silenzio e quello spot restava attaccato al precedente. Righe vuote e separatori come "****" non contano
+- 🇬🇧 **Orange TXT pill for ignored lines** — if the txt has lines not in the "mm:ss - Name" format (e.g. "1.05 Spot…", "01:30 Spot…" without the dash), the pill turns orange and the tooltip lists them; the same list appears in the log when the video starts. Before, they were silently skipped and that spot stayed attached to the previous one. Empty lines and separators like "****" don't count
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **"Interrotto" sulla card giusta** — con uno Stop durante i tagli, "Interrotto" compariva sul video successivo (mai partito) e quello fermato restava su "In lavorazione"
+- 🇬🇧 **"Stopped" on the right card** — with a Stop during cutting, "Stopped" appeared on the next video (never started) while the stopped one stayed on "Processing"
+
 ---
 
 ## 🎬 Spot Cutter 1.3.5
