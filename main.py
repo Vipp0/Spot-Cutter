@@ -214,6 +214,33 @@ class YTWorker(QObject):
             await cb_log("❌ Operazione fallita o annullata.", "red")
 
 
+class TxtSearchWorker(QObject):
+    """Cerca su YouTube il txt di uno o più video già scaricati, uno alla volta."""
+    sig_uno  = Signal(str, dict)   # (nome video, risultato di VideoEngine.cerca_txt_youtube)
+    sig_fine = Signal()
+
+    def __init__(self, video: list):
+        super().__init__()
+        self.video = video
+
+    @Slot()
+    def run(self):
+        async def nop(*a):
+            pass
+
+        async def _cerca():
+            engine = VideoEngine(log_cb=nop, progress_cb=nop)
+            for vid in self.video:
+                self.sig_uno.emit(vid, await engine.cerca_txt_youtube(vid))
+
+        try:
+            asyncio.run(_cerca())
+        except Exception as e:
+            self.sig_uno.emit("", {"esito": "errore", "messaggio": str(e)})
+        finally:
+            self.sig_fine.emit()
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # WIDGET CARD — singola riga della coda
 # ══════════════════════════════════════════════════════════════════════════
@@ -546,11 +573,13 @@ class SettingsDialog(QDialog):
 # FINESTRA EDITOR TXT
 # ══════════════════════════════════════════════════════════════════════════
 class TxtEditorDialog(QDialog):
-    def __init__(self, title: str, content: str, parent=None):
+    def __init__(self, title: str, content: str, parent=None, vid_name: str | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(900, 680)
         self.setModal(True)
+        self._vid_name = vid_name
+        self._ricerca  = None   # (thread, worker) della ricerca su YouTube in corso
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -569,11 +598,68 @@ class TxtEditorDialog(QDialog):
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_cancel)
-        btn_row.addStretch()
+        if vid_name:
+            # Recupera il txt dalla descrizione del video su YouTube, cercandolo per titolo
+            self._btn_cerca = QPushButton("🔎 Cerca su YouTube")
+            self._btn_cerca.setObjectName("btn_dlg_reset")
+            self._btn_cerca.setToolTip("Cerca su YouTube il video con questo titolo e\n"
+                                       "ricava il txt dai timestamp della descrizione.")
+            self._btn_cerca.clicked.connect(self._cerca_youtube)
+            btn_row.addWidget(self._btn_cerca)
+            self._lbl_cerca = QLabel("")
+            self._lbl_cerca.setWordWrap(True)
+            btn_row.addWidget(self._lbl_cerca, stretch=1)
+        else:
+            btn_row.addStretch()
         layout.addLayout(btn_row)
+        self.finished.connect(self._stacca_ricerca)
 
     def get_text(self) -> str:
         return self._editor.toPlainText()
+
+    def _cerca_youtube(self):
+        self._btn_cerca.setEnabled(False)
+        self._lbl_cerca.setText("Ricerca su YouTube in corso...")
+        thread, worker = QThread(), TxtSearchWorker([self._vid_name])
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.sig_uno.connect(self._on_trovato)
+        worker.sig_fine.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        # Il thread deve sopravvivere anche se la finestra viene chiusa prima della risposta
+        app = self.parent()
+        app._ricerche_txt.append((thread, worker))
+        thread.finished.connect(lambda: app._ricerche_txt.remove((thread, worker)))
+        self._ricerca = (thread, worker)
+        thread.start()
+
+    @Slot(str, dict)
+    def _on_trovato(self, vid: str, r: dict):
+        self._btn_cerca.setEnabled(True)
+        self._ricerca = None
+        if r["esito"] != "ok":
+            self._lbl_cerca.setText(f"⚠️ {r['messaggio'][:1].upper()}{r['messaggio'][1:]}.")
+            return
+        attuale = self.get_text().strip()
+        if attuale and attuale != r["txt"].strip():
+            risposta = QMessageBox.question(
+                self, "Sostituire il testo?",
+                "L'editor contiene già del testo.\nSostituirlo con quello trovato su YouTube?")
+            if risposta != QMessageBox.StandardButton.Yes:
+                self._lbl_cerca.setText("Testo trovato ma non inserito.")
+                return
+        self._editor.setPlainText(r["txt"])
+        self._lbl_cerca.setText(f"✅ {r['messaggio'][:1].upper()}{r['messaggio'][1:]}. "
+                                "Controlla e premi Salva.")
+
+    def _stacca_ricerca(self):
+        if self._ricerca:
+            try:
+                self._ricerca[1].sig_uno.disconnect(self._on_trovato)
+            except (RuntimeError, TypeError):
+                pass
+            self._ricerca = None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -982,6 +1068,7 @@ class SpotCutterApp(QMainWindow):
 
         self.settings_storage = QSettings("SpotCutter", "SpotCutterUltra")
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
+        self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
 
         self.state = {
             "running":       False,
@@ -1539,6 +1626,20 @@ class SpotCutterApp(QMainWindow):
             btn.clicked.connect(lambda checked, k=key: self._on_sort(k))
             setattr(self, f"_btn_sort_{key}", btn)
             toolbar.addWidget(btn)
+
+        sep_txt = QFrame()
+        sep_txt.setFrameShape(QFrame.Shape.VLine)
+        sep_txt.setObjectName("separator")
+        toolbar.addWidget(sep_txt)
+
+        self._btn_cerca_txt = QPushButton("🔎 Cerca txt mancanti")
+        self._btn_cerca_txt.setObjectName("btn_sort")
+        self._btn_cerca_txt.setFixedHeight(28)
+        self._btn_cerca_txt.setToolTip("Per ogni video in coda senza txt cerca su YouTube il video\n"
+                                       "con lo stesso titolo e crea il txt dai timestamp della descrizione.\n"
+                                       "I txt già presenti non vengono mai toccati.")
+        self._btn_cerca_txt.clicked.connect(self._on_cerca_txt_mancanti)
+        toolbar.addWidget(self._btn_cerca_txt)
 
         toolbar.addStretch()
 
@@ -2199,7 +2300,7 @@ class SpotCutterApp(QMainWindow):
             with open(file_path, "r", encoding="utf-8") as f:
                 contenuto = f.read()
 
-        dlg = TxtEditorDialog(f"Editor — {base}.txt", contenuto, self)
+        dlg = TxtEditorDialog(f"Editor — {base}.txt", contenuto, self, vid_name=vid_name)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -2215,6 +2316,73 @@ class SpotCutterApp(QMainWindow):
                 self.state["queue_files"][i] = (item[0], f"{base}.txt", item[2])
 
         self._on_log(f"✅ TXT salvato: {base}.txt", "green")
+        self.render_queue()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TXT MANCANTI DA YOUTUBE
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _txt_presente(self, vid_name: str, cartella: str | None = None) -> bool:
+        cartella = self.state.get("current_dir", "") if cartella is None else cartella
+        path = os.path.join(cartella, os.path.splitext(vid_name)[0] + ".txt")
+        return os.path.exists(path) and os.path.getsize(path) > 0
+
+    def _on_cerca_txt_mancanti(self):
+        mancanti = [item[0] for item in self.state["queue_files"] if not self._txt_presente(item[0])]
+        if not mancanti:
+            self._on_log("ℹ️ Nessun txt mancante nella coda.", "cyan")
+            return
+        self._on_log(f"🔎 Ricerca su YouTube dei txt mancanti: {len(mancanti)} video...", "cyan")
+        self._btn_cerca_txt.setEnabled(False)
+        self._btn_cerca_txt.setText(f"🔎 Ricerca 0/{len(mancanti)}...")
+        # La cartella si fissa ora: i txt vanno accanto a questi video anche se nel frattempo
+        # ne viene caricata un'altra
+        self._cerca_txt_stato = {"totale": len(mancanti), "fatti": 0, "trovati": 0,
+                                 "cartella": self.state["current_dir"]}
+
+        thread, worker = QThread(), TxtSearchWorker(mancanti)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.sig_uno.connect(self._on_txt_trovato)
+        worker.sig_fine.connect(thread.quit)
+        worker.sig_fine.connect(self._on_cerca_txt_finita)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._ricerche_txt.append((thread, worker))
+        thread.finished.connect(lambda: self._ricerche_txt.remove((thread, worker)))
+        thread.start()
+
+    @Slot(str, dict)
+    def _on_txt_trovato(self, vid: str, r: dict):
+        st = self._cerca_txt_stato
+        st["fatti"] += 1
+        self._btn_cerca_txt.setText(f"🔎 Ricerca {st['fatti']}/{st['totale']}...")
+        base = os.path.splitext(vid)[0]
+        if r["esito"] != "ok":
+            self._on_log(f"⚠️ {base}: {r['messaggio']}.", "orange")
+            return
+        # Mai sovrascrivere un txt comparso nel frattempo (es. scritto a mano nell'editor)
+        if self._txt_presente(vid, st["cartella"]):
+            self._on_log(f"ℹ️ {base}: txt già presente, non modificato.", "cyan")
+            return
+        path = os.path.join(st["cartella"], f"{base}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(r["txt"])
+        st["trovati"] += 1
+        self._on_log(f"✅ {base}: {r['messaggio']}.", "green")
+        if self.state["current_dir"] == st["cartella"]:
+            for i, item in enumerate(self.state["queue_files"]):
+                if item[0] == vid:
+                    self.state["queue_files"][i] = (item[0], f"{base}.txt", item[2])
+            self.render_queue()
+
+    @Slot()
+    def _on_cerca_txt_finita(self):
+        st = self._cerca_txt_stato
+        self._btn_cerca_txt.setEnabled(True)
+        self._btn_cerca_txt.setText("🔎 Cerca txt mancanti")
+        self._on_log(f"🔎 Ricerca txt finita: {st['trovati']} trovati su {st['totale']}.",
+                     "green" if st["trovati"] == st["totale"] else "orange")
         self.render_queue()
 
     # ══════════════════════════════════════════════════════════════════════

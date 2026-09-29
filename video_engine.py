@@ -1074,6 +1074,106 @@ class VideoEngine:
             await self.log(f"⚠️ Errore get_url_info: {e}", "red")
             return None
 
+    # ── TXT DALLA DESCRIZIONE YOUTUBE ─────────────────────────────────────
+    @staticmethod
+    def _righe_txt(desc: str) -> list[str]:
+        """Righe "mm:ss - Nome" ricavate dai timestamp della descrizione di un video."""
+        righe = []
+        for d_line in desc.splitlines():
+            m = re.search(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*[-:]?\s*(.+)", d_line.strip())
+            if m and m.group(2).strip():
+                righe.append(f"{m.group(1)} - {m.group(2).strip().strip('*_ ')}")
+        return righe
+
+    # yt-dlp mette nei nomi dei file varianti "larghe" dei caratteri vietati da Windows
+    _LARGHI = str.maketrans({"⧸": "/", "＂": '"', "：": ":", "？": "?", "＊": "*",
+                             "｜": "|", "＜": "<", "＞": ">", "＼": "\\"})
+
+    @staticmethod
+    def _norm_titolo(s: str) -> str:
+        """Solo lettere e cifre minuscole: "25⧸4⧸1985 - RaiDue" e "2541985   RaiDue" coincidono."""
+        return "".join(c for c in s.translate(VideoEngine._LARGHI).lower() if c.isalnum())
+
+    @staticmethod
+    def _query_da_file(vid_name: str) -> list[str]:
+        """
+        Testo da cercare su YouTube ricavato dal nome del file. Se la data ha perso le barre
+        ("2541985 RaiDue ...") le rimette, provando entrambe le letture quando è ambigua
+        ("1111985" -> 1/11/1985 e 11/1/1985): senza barre YouTube non trova il video.
+        """
+        t = re.sub(r"\s+", " ", os.path.splitext(vid_name)[0].translate(VideoEngine._LARGHI)).strip()
+        m = re.match(r"(\d{2,4})((?:19|20)\d{2})\b\s*(.*)", t)
+        if not m:
+            return [t]
+        gm, anno, resto = m.groups()
+        varianti = []
+        for i in range(1, len(gm)):
+            g, me = gm[:i], gm[i:]
+            if len(g) <= 2 and len(me) <= 2 and 1 <= int(g) <= 31 and 1 <= int(me) <= 12:
+                varianti.append(f"{int(g)}/{int(me)}/{anno} {resto}".strip())
+        return varianti or [t]
+
+    async def cerca_txt_youtube(self, vid_name: str) -> dict:
+        """
+        Cerca su YouTube il video da cui viene vid_name (per titolo) e ne ricava il txt,
+        per i video già scaricati senza txt. Non sceglie mai a caso: accetta solo un titolo
+        uguale al nome del file (o di cui il nome è l'inizio, per i nomi troncati).
+        Ritorna {"esito": "ok" | "no_timestamp" | "non_trovato" | "ambiguo" | "errore",
+                 "messaggio": ..., "txt": ... (solo se ok)}.
+        """
+        c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+        async def _yt(*args, timeout=60):
+            p = await asyncio.create_subprocess_exec(
+                self.ytdlp_bin, "--no-warnings", "--encoding", "utf-8", *args,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                creationflags=c_flags)
+            try:
+                out, _ = await asyncio.wait_for(p.communicate(), timeout)
+            except asyncio.TimeoutError:
+                await kill_process_tree(p)
+                raise RuntimeError("YouTube non risponde")
+            return out.decode("utf-8", errors="replace")
+
+        nf = self._norm_titolo(os.path.splitext(vid_name)[0])
+        candidati = {}
+        try:
+            for q in self._query_da_file(vid_name):
+                out = await _yt("--flat-playlist", "--print", "%(id)s\t%(channel)s\t%(title)s",
+                                f"ytsearch8:{q}")
+                for riga in out.splitlines():
+                    parti = riga.split("\t")
+                    if len(parti) == 3:
+                        candidati.setdefault(parti[0], (parti[1], parti[2]))
+        except Exception as e:
+            return {"esito": "errore", "messaggio": f"ricerca su YouTube non riuscita ({e})"}
+
+        buoni = [(v, ch, tit) for v, (ch, tit) in candidati.items()
+                 if (nt := self._norm_titolo(tit)) == nf or (len(nf) >= 20 and nt.startswith(nf))]
+        if len(buoni) > 1:
+            esatti = [b for b in buoni if self._norm_titolo(b[2]) == nf]
+            buoni = esatti or buoni
+        if len(buoni) > 1:
+            buoni = [b for b in buoni if b[1].lower() == "mdeplo"] or buoni
+        if not buoni:
+            return {"esito": "non_trovato", "messaggio": "nessun video su YouTube con questo titolo"}
+        if len(buoni) > 1:
+            return {"esito": "ambiguo", "messaggio": "più video con titolo compatibile: "
+                    + "; ".join(f'"{b[2]}"' for b in buoni[:3])}
+
+        vid_id, canale, titolo = buoni[0]
+        try:
+            desc = await _yt("--skip-download", "--print", "description",
+                             f"https://www.youtube.com/watch?v={vid_id}")
+        except Exception as e:
+            return {"esito": "errore", "messaggio": f"descrizione di \"{titolo}\" non letta ({e})"}
+        righe = self._righe_txt(desc)
+        if not righe:
+            return {"esito": "no_timestamp",
+                    "messaggio": f"trovato \"{titolo}\" ({canale}), ma la descrizione non ha timestamp"}
+        return {"esito": "ok", "txt": "\n".join(righe),
+                "messaggio": f"trovato \"{titolo}\" ({canale}), {len(righe)} righe"}
+
     # ── DOWNLOAD YOUTUBE ──────────────────────────────────────────────────
     async def download_youtube(self, url: str, output_dir: str, state: dict,
                                generate_txt: bool = True) -> list[tuple[str, str | None]] | None:
@@ -1218,11 +1318,7 @@ class VideoEngine:
                         os.remove(desc_path)
                     except Exception:
                         pass
-                txt_lines = []
-                for d_line in desc.splitlines():
-                    m = re.search(r"(\d{1,2}:\d{2}(?::\d{2})?)\s*[-:]?\s*(.+)", d_line.strip())
-                    if m and m.group(2).strip():
-                        txt_lines.append(f"{m.group(1)} - {m.group(2).strip().strip('*_ ')}")
+                txt_lines = self._righe_txt(desc)
                 if txt_lines:
                     txt_basename = os.path.splitext(vid_basename)[0] + ".txt"
                     with open(os.path.join(output_dir, txt_basename), "w", encoding="utf-8") as tf:

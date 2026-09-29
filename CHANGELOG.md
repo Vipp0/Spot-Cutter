@@ -5,6 +5,21 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.5
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Cerca su YouTube** — nell'editor del txt (clic sulla pillola "NO TXT") un pulsante cerca su YouTube il video con lo stesso titolo e riempie l'editor con i timestamp della descrizione, da controllare e salvare
+- 🇬🇧 **Search on YouTube** — in the txt editor (click the "NO TXT" pill) a button searches YouTube for the video with the same title and fills the editor with the timestamps from its description, ready to check and save
+
+- 🇮🇹 **Cerca txt mancanti** — un pulsante nella barra della coda recupera in un colpo i txt di tutti i video che non ce l'hanno; i txt già presenti non vengono mai toccati
+- 🇬🇧 **Search missing txt** — a button in the queue toolbar fetches the txt for every video that has none in one go; existing txt files are never touched
+
+- 🇮🇹 Riconosce anche i nomi scaricati con altri programmi, con la data senza barre e il titolo troncato ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera"); se non trova un titolo compatibile o il video non ha timestamp lo dice, senza mai scegliere a caso
+- 🇬🇧 Also recognises names downloaded with other programs, with the date without slashes and a truncated title ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera"); if no matching title is found or the video has no timestamps it says so, never picking at random
+
+---
+
 ## 🎬 Spot Cutter 1.3.4
 
 ### 🐛 Bug fix
