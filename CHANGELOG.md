@@ -27,6 +27,12 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Tagli manuali: nomi già pronti** — per un video senza txt, l'editor dei tagli manuali (✂️) cerca il video su YouTube. Se la descrizione ha solo la lista dei nomi senza orari, la prima riga parte già con il primo nome a 00:00 e ogni clic su un nero (+) aggiunge l'orario con il nome successivo; "⏭ Salta nome" e "⏮" servono per i nomi senza un nero proprio. Il nome proposto si ricalcola dalle righe presenti, quindi cancellando una riga sbagliata non si sfasa nulla. Se invece la descrizione ha già i timestamp, l'editor si riempie con il txt completo. La data del titolo viene applicata al salvataggio
 - 🇬🇧 **Manual cuts: names ready** — for a video without a txt, the manual cuts editor (✂️) looks the video up on YouTube. If the description only has the list of names without times, the first line already starts with the first name at 00:00 and each click on a black (+) adds the time with the next name; "⏭ Skip name" and "⏮" handle names without a black of their own. The proposed name is recalculated from the lines present, so deleting a wrong line never shifts the names. If the description already has timestamps, the editor is filled with the complete txt. The date from the title is applied on save
 
+- 🇮🇹 **Tagli manuali: anteprima dei neri** — accanto a ogni nero trovato un pulsante ▶ mostra 5 secondi di video intorno a quel punto in una piccola finestra, per capire subito se è uno stacco o un nero dentro uno spot, senza aprire tutto il video
+- 🇬🇧 **Manual cuts: black preview** — next to each black found, a ▶ button shows 5 seconds of video around that point in a small window, to see at once whether it is a break or a black inside a spot, without opening the whole video
+
+- 🇮🇹 **Tagli manuali: distanza tra i neri e neri già usati** — ogni nero mostra la distanza dal precedente ("+ 01:31 (+31s)"; gli spot durano quasi sempre 15, 20, 30 o 60 secondi) e quelli già inseriti nel txt diventano grigi
+- 🇬🇧 **Manual cuts: gap between blacks and used blacks** — each black shows the distance from the previous one ("+ 01:31 (+31s)"; spots almost always last 15, 20, 30 or 60 seconds) and those already in the txt turn grey
+
 ### 🔧 Miglioramenti / Improvements
 
 - 🇮🇹 **Ricerca txt per i file doppioni** — i nomi con un segno di doppione in fondo ("... e prom[2]", "(2)", "- Copia") non impediscono più di trovare il video: se il nome intero non trova nulla, la ricerca riprova senza quel segno

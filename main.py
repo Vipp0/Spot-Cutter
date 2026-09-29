@@ -53,7 +53,7 @@ for exe in ("ffmpeg.exe", "ffprobe.exe"):
 from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
     get_unique_filename, get_video_duration, righe_txt_ignorate,
-    parse_settings, load_settings, save_settings,
+    get_seconds, get_tool_path, parse_settings, load_settings, save_settings,
 )
 from video_engine import VideoEngine
 
@@ -868,6 +868,8 @@ class BlackdetectDialog(QDialog):
         self._salti = 0          # spostamenti col pulsante (nomi senza un nero proprio)
         self._ricerca = None     # (thread, worker) della ricerca su YouTube in corso
         self.data_trovata = None # data dal titolo YouTube, applicata al salvataggio
+        self._neri = []          # (secondo, pulsante "+") dei neri trovati
+        self._anteprima = None   # processo ffplay dell'anteprima in corso
         self.setWindowTitle(f"Tagli manuali — {os.path.basename(vid_path)}")
         self.setMinimumSize(820, 520)
         self.setModal(True)
@@ -960,6 +962,8 @@ class BlackdetectDialog(QDialog):
         nomi_row.addWidget(self._btn_salta)
         right.addLayout(nomi_row)
         self._editor.textChanged.connect(self._aggiorna_nomi)
+        self._editor.textChanged.connect(self._aggiorna_neri_usati)
+        self.finished.connect(self._chiudi_anteprima)
 
         btn_row = QHBoxLayout()
         btn_save   = QPushButton("💾 Salva TXT")
@@ -1095,25 +1099,71 @@ class BlackdetectDialog(QDialog):
             self._status_lbl.setText("Nessun nero trovato.")
             return
 
-        self._status_lbl.setText(f"{len(b_starts)} neri trovati — clicca per inserire")
+        self._status_lbl.setText(f"{len(b_starts)} neri trovati — clicca per inserire, "
+                                 f"▶ per vederlo")
 
+        prec = None
         for ts in b_starts:
             # Converte secondi in HH:MM:SS
             h  = int(ts) // 3600
             m  = (int(ts) % 3600) // 60
             s  = int(ts) % 60
             ts_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+            # Distanza dal nero precedente: gli spot durano quasi sempre 15/20/30/60 s,
+            # un nero a pochi secondi dal precedente è di solito dentro uno spot
+            dist = f"  (+{ts - prec:.0f}s)" if prec is not None else ""
+            prec = ts
 
-            btn = QPushButton(f"+ {ts_str}")
-            btn.setStyleSheet(
-                "text-align: left; padding: 4px 8px; "
-                "background: #E3F2FD; border: 1px solid #90CAF9; "
-                "border-radius: 4px; font-family: 'Consolas', monospace;"
-            )
+            riga = QHBoxLayout()
+            riga.setSpacing(4)
+            btn = QPushButton(f"+ {ts_str}{dist}")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             # Cattura ts_str per valore nel lambda
             btn.clicked.connect(lambda checked, t=ts_str: self._insert_timestamp(t))
-            self._btn_layout.addWidget(btn)
+            btn_play = QPushButton("▶")
+            btn_play.setFixedWidth(30)
+            btn_play.setToolTip("Guarda qualche secondo intorno a questo nero")
+            btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_play.clicked.connect(lambda checked, t=ts, e=ts_str: self._anteprima_nero(t, e))
+            riga.addWidget(btn, stretch=1)
+            riga.addWidget(btn_play)
+            self._btn_layout.addLayout(riga)
+            self._neri.append((int(ts), btn))
+        self._aggiorna_neri_usati()
+
+    _STILE_NERO = ("text-align: left; padding: 4px 8px; border-radius: 4px; "
+                   "font-family: 'Consolas', monospace; ")
+
+    def _aggiorna_neri_usati(self):
+        """I neri già scritti nell'editor diventano grigi, così si vede a che punto si è."""
+        usati = {int(get_seconds(t)) for t in
+                 re.findall(r"^\s*(\d{1,2}:\d{2}(?::\d{2})?)", self._editor.toPlainText(), re.M)}
+        for sec, btn in self._neri:
+            if sec in usati:
+                btn.setStyleSheet(self._STILE_NERO + "background: #EEEEEE; color: #9E9E9E; "
+                                  "border: 1px solid #E0E0E0;")
+            else:
+                btn.setStyleSheet(self._STILE_NERO + "background: #E3F2FD; "
+                                  "border: 1px solid #90CAF9;")
+
+    def _anteprima_nero(self, ts: float, ts_str: str):
+        """Mostra con ffplay 5 secondi intorno al nero (2 prima, 3 dopo), in una finestrella."""
+        self._chiudi_anteprima()
+        cmd = [get_tool_path("ffplay"), "-hide_banner", "-loglevel", "error", "-autoexit",
+               "-ss", f"{max(0.0, ts - 2):.2f}", "-t", "5", "-x", "640", "-y", "480",
+               "-window_title", f"Anteprima nero {ts_str}", self.vid_path]
+        try:
+            self._anteprima = subprocess.Popen(
+                cmd, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+        except OSError as e:
+            QMessageBox.warning(self, "Anteprima non disponibile",
+                                f"Non riesco ad avviare ffplay (di solito è installato insieme "
+                                f"a ffmpeg):\n{e}")
+
+    def _chiudi_anteprima(self):
+        if self._anteprima and self._anteprima.poll() is None:
+            self._anteprima.terminate()
+        self._anteprima = None
 
     def _insert_timestamp(self, ts_str: str):
         """Inserisce il timestamp (col prossimo nome della lista, se c'è) nella riga corrente."""
