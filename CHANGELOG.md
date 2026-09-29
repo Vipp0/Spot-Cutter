@@ -24,6 +24,11 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Coda salvata in automatico** — la coda viene salvata a ogni cambiamento; alla riapertura il programma chiede se riprendere quella dell'ultima volta (vale anche dopo aver installato una versione nuova)
 - 🇬🇧 **Queue saved automatically** — the queue is saved on every change; on reopening the program asks whether to resume the last one (also after installing a new version)
 
+### 🔧 Miglioramenti / Improvements
+
+- 🇮🇹 **Ricerca txt per i file doppioni** — i nomi con un segno di doppione in fondo ("... e prom[2]", "(2)", "- Copia") non impediscono più di trovare il video: se il nome intero non trova nulla, la ricerca riprova senza quel segno
+- 🇬🇧 **Txt search for duplicate files** — names ending with a duplicate mark ("... e prom[2]", "(2)", "- Copy") no longer prevent finding the video: if the full name finds nothing, the search retries without that mark
+
 ---
 
 ## 🎬 Spot Cutter 1.3.5
