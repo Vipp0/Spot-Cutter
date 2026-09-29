@@ -141,6 +141,21 @@ def extract_date_info(filename):
             })
 
     if not found_candidates:
+        # Date compatte senza barre né zeri ("1331983" = 13/3/1983, "2071984" = 20/7/1984):
+        # nei titoli originali giorno e mese non hanno lo zero davanti, quindi una parte che
+        # inizia con 0 non è una lettura possibile. Restano arancioni (da confermare): la
+        # verifica online col titolo YouTube le rende verdi. Se le letture sono due
+        # ("1121985" = 1/12 o 11/2) si sa solo l'anno.
+        for m in re.finditer(r"(?<!\d)(\d{2,3})((?:19|20)\d{2})(?!\d)", raw_name):
+            gm, a = m.groups()
+            letture = [(gm[:i], gm[i:]) for i in range(1, len(gm))
+                       if gm[0] != "0" and gm[i] != "0" and is_valid_date(gm[:i], gm[i:], a)]
+            if len(letture) == 1:
+                g, m_val = letture[0]
+                return f"{g.zfill(2)}-{m_val.zfill(2)}-{a}", a, "orange"
+            if letture:
+                return f"01-01-{a}", a, "orange"
+
         # Fallback anno isolato (es. "Film 1995.mp4")
         year_match = re.search(r'(?:^|\D)(19\d{2}|20\d{2})(?:\D|$)', raw_name)
         if year_match:

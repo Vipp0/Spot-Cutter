@@ -236,9 +236,10 @@ class TxtSearchWorker(QObject):
     sig_uno  = Signal(str, dict)   # (nome video, risultato di VideoEngine.cerca_txt_youtube)
     sig_fine = Signal()
 
-    def __init__(self, video: list):
+    def __init__(self, video: list, solo_data: bool = False):
         super().__init__()
         self.video = video
+        self.solo_data = solo_data   # solo la data del titolo (verifica online)
 
     @Slot()
     def run(self):
@@ -248,7 +249,7 @@ class TxtSearchWorker(QObject):
         async def _cerca():
             engine = VideoEngine(log_cb=nop, progress_cb=nop)
             for vid in self.video:
-                self.sig_uno.emit(vid, await engine.cerca_txt_youtube(vid))
+                self.sig_uno.emit(vid, await engine.cerca_txt_youtube(vid, self.solo_data))
 
         try:
             asyncio.run(_cerca())
@@ -1101,6 +1102,7 @@ class SpotCutterApp(QMainWindow):
         self.settings_storage = QSettings("SpotCutter", "SpotCutterUltra")
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
+        self._date_verificate = set()   # video già mandati alla verifica online della data
         self._yt_playlist = False           # scelta "Intera playlist" per il prossimo download
         self._yt_playlist_attiva = False    # download di playlist in corso
         self._yt_playlist_aggiunti = 0      # video della playlist entrati in coda
@@ -1908,6 +1910,8 @@ class SpotCutterApp(QMainWindow):
 
         self._sync_buttons()
         self._update_duration_label()
+        # I video appena entrati con una data da confermare si controllano online
+        QTimer.singleShot(0, self._verifica_date_online)
 
     def _sync_buttons(self):
         """Disabilita AVVIA se ci sono errori (TXT mancanti o date invalide)."""
@@ -2464,17 +2468,57 @@ class SpotCutterApp(QMainWindow):
         self._cerca_txt_stato = {"totale": len(mancanti), "fatti": 0, "trovati": 0,
                                  "cartella": self.state["current_dir"]}
 
-        thread, worker = QThread(), TxtSearchWorker(mancanti)
+        self._avvia_ricerca_youtube(mancanti, self._on_txt_trovato, self._on_cerca_txt_finita)
+
+    def _avvia_ricerca_youtube(self, video: list, on_uno, on_fine=None, solo_data=False):
+        """Ricerca su YouTube in un thread a parte, un video alla volta."""
+        thread, worker = QThread(), TxtSearchWorker(video, solo_data)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.sig_uno.connect(self._on_txt_trovato)
+        worker.sig_uno.connect(on_uno)
         worker.sig_fine.connect(thread.quit)
-        worker.sig_fine.connect(self._on_cerca_txt_finita)
+        if on_fine:
+            worker.sig_fine.connect(on_fine)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         self._ricerche_txt.append((thread, worker))
         thread.finished.connect(lambda: self._ricerche_txt.remove((thread, worker)))
         thread.start()
+
+    def _verifica_date_online(self):
+        """
+        Controllo di sicurezza: le date non certe del nome (ricostruite da "1331983", solo
+        l'anno, ...) si confrontano col titolo YouTube. Se il video si trova, vale la data
+        del titolo e la pillola diventa verde; se no resta arancione, da confermare a mano.
+        Ogni video si controlla una volta per sessione; le date inserite a mano non si toccano.
+        """
+        da_fare = []
+        for vid, _, manuale in self.state.get("queue_files", []):
+            if vid in self._date_verificate or (manuale and manuale.strip() not in ("", "--")):
+                continue
+            if extract_date_info(vid)[2] == "green":
+                continue
+            self._date_verificate.add(vid)
+            da_fare.append(vid)
+        if da_fare:
+            self._on_log(f"📅 Verifica online della data: {len(da_fare)} video...", "cyan")
+            self._avvia_ricerca_youtube(da_fare, self._on_data_verificata, solo_data=True)
+
+    @Slot(str, dict)
+    def _on_data_verificata(self, vid: str, r: dict):
+        base = os.path.splitext(vid)[0]
+        data = r.get("data")
+        if not data:
+            motivo = r["messaggio"] if r["esito"] != "ok" else "il titolo YouTube non ha una data completa"
+            self._on_log(f"⚠️ {base}: data non confermata online ({motivo}), controllala a mano.",
+                         "orange")
+            return
+        stimata = extract_date_info(vid)[0]
+        if stimata and not stimata.startswith("01-01-") and stimata != data:
+            self._on_log(f"⚠️ {base}: dal nome sembrava {stimata}, ma il titolo YouTube dice {data}.",
+                         "orange")
+        self._applica_data_youtube(vid, data)
+        self.render_queue()
 
     @Slot(str, dict)
     def _on_txt_trovato(self, vid: str, r: dict):
@@ -2484,6 +2528,9 @@ class SpotCutterApp(QMainWindow):
         base = os.path.splitext(vid)[0]
         if r["esito"] != "ok":
             self._on_log(f"⚠️ {base}: {r['messaggio']}.", "orange")
+            if r.get("data") and self.state["current_dir"] == st["cartella"]:
+                self._applica_data_youtube(vid, r["data"])   # trovato, ma senza timestamp
+                self.render_queue()
             return
         # Mai sovrascrivere un txt comparso nel frattempo (es. scritto a mano nell'editor)
         if self._txt_presente(vid, st["cartella"]):

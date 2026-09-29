@@ -306,7 +306,17 @@ class VideoEngine:
                 # La "/" diventa un trattino ("Promo/teaser" -> "Promo-teaser"), gli altri
                 # caratteri vietati da Windows spariscono; i punti restano ("G.W. Electronics")
                 name_c = re.sub(r'[\\*?:"<>|]', "", name_r.replace("/", "-"))
-                name_c = name_c[:100].rstrip(". ") or "Sconosciuto"
+                if len(name_c) > 100:
+                    # Troppo lungo: si taglia all'ultimo spazio (non a metà parola) e senza
+                    # lasciare una parentesi aperta ("... Junior (sponsorizzato da Mo")
+                    if " " in name_c[:101]:
+                        name_c = name_c[:101].rsplit(" ", 1)[0]
+                    else:
+                        name_c = name_c[:100]
+                    if name_c.count("(") > name_c.count(")"):
+                        name_c = name_c[:name_c.rfind("(")]
+                    name_c = name_c.rstrip(" -,")
+                name_c = name_c.rstrip(". ") or "Sconosciuto"
 
                 r_s = punti[i - 1][1]
                 if i < len(spot_list):
@@ -317,7 +327,7 @@ class VideoEngine:
                     else:
                         r_e = r_s + 60
 
-                d_cat, k, l_col = self._categorize(name_r)
+                d_cat, k, l_col = self._categorize(name_r, data_finale)
                 base_libreria   = state.get("work_dir", state["current_dir"])
                 target_p        = (os.path.join(base_libreria, final_year, d_cat)
                                    if d_cat
@@ -1063,32 +1073,56 @@ class VideoEngine:
 
     # ── CATEGORIZZAZIONE SPOT ─────────────────────────────────────────────
     @staticmethod
-    def _categorize(name_r: str) -> tuple:
+    def _categorize(name_r: str, data: str | None = None) -> tuple:
         """
         Ritorna (cartella_destinazione, chiave_stats, colore_log)
+        data: "GG-MM-AAAA" del video (o None), serve per i marchi natalizi.
         """
         n = name_r.lower()
 
         # --- CATEGORIA FESTIVITÀ (Natale & Capodanno) ---
         # Usiamo radici per catturare singolari/plurali e varianti
         keywords_feste = [
-            # Natale: Brand e Dolci
-            "nataliz", "natale", "pandor", "panetton", 
-            "bauli", "melegatti", "alemagna", "maina", 
-            "paluani", "tartufon",
-            
+            # Natale: Dolci
+            "nataliz", "natale", "pandor", "panetton",
+
             # Capodanno e Festeggiamenti
-            "capodanno", "vigilia", "brindisi", "spumant", 
+            "capodanno", "vigilia", "brindisi", "spumant",
             "cenon", "cin cin", "buon anno",
-            
+
             # Termini generici ma sicuri
             "augur", "buone feste", "festività"
         ]
-        
-        if any(x in n for x in keywords_feste):
+        # Marchi dei dolci natalizi: fanno anche caramelle e gelati ("Sanagola Alemagna",
+        # "Tartufone Motta"), quindi valgono solo per i video di novembre, dicembre e gennaio
+        # (o senza data)
+        marchi_feste = ["bauli", "melegatti", "alemagna", "maina", "paluani", "tartufon"]
+        try:
+            periodo_feste = int(data.split("-")[1]) in (11, 12, 1)
+        except (AttributeError, IndexError, ValueError):
+            periodo_feste = True
+
+        if any(x in n for x in keywords_feste) or (periodo_feste and any(x in n for x in marchi_feste)):
             return "Natale", "natale", "#FF3D00"
         # ---------------------------------
-            
+
+        # Nei txt la prima parola dice il tipo ("Spot ...", "Promo/anticipazioni ..."): vale
+        # quella, così "Spot promozioni Fiat" non finisce nei Promo né "Spot giornale annunci"
+        # negli Annunci. Le parole chiave sotto restano per i nomi che iniziano diversamente.
+        prima = re.split(r"[\s/]+", n.strip(' "'), maxsplit=1)[0]
+        if prima in ("spot", "minispot"):
+            return "", "spot", "#2ECC71"
+        if prima in ("promo", "trailer"):
+            return "Promo", "promo", "#F1C40F"
+        if prima == "bumper":
+            return "Bumper", "bumper", "#00E5FF"
+        if prima in ("annuncio", "annunci"):
+            return "Annunci", "annunci", "#FF85FF"
+        if prima in ("cartello", "cartelli"):
+            return "Cartelli", "cartelli", "#E0E0E0"
+        if prima in ("videosigla", "videosigle", "sigla", "sigle"):
+            return "Videosigle", "videosigle", "#BF94FF"
+
         if "annunc"     in n: return "Annunci",     "annunci",      "#FF85FF"
         if any(x in n for x in ["promo", "trailer"]): 
             return "Promo", "promo", "#F1C40F"
@@ -1186,13 +1220,15 @@ class VideoEngine:
                 varianti.append(f"{int(g)}/{int(me)}/{anno} {resto}".strip())
         return varianti or [t]
 
-    async def cerca_txt_youtube(self, vid_name: str) -> dict:
+    async def cerca_txt_youtube(self, vid_name: str, solo_data: bool = False) -> dict:
         """
         Cerca su YouTube il video da cui viene vid_name (per titolo) e ne ricava il txt,
         per i video già scaricati senza txt. Non sceglie mai a caso: accetta solo un titolo
         uguale al nome del file (o di cui il nome è l'inizio, per i nomi troncati).
         Ritorna {"esito": "ok" | "no_timestamp" | "non_trovato" | "ambiguo" | "errore",
-                 "messaggio": ..., "txt" e "data" ("GG-MM-AAAA" dal titolo, o None) solo se ok}.
+                 "messaggio": ..., "data" ("GG-MM-AAAA" dal titolo, o None) se il video è
+                 stato trovato, "txt" solo se ok}.
+        solo_data: serve solo la data del titolo (verifica online), la descrizione non si legge.
         """
         c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
@@ -1257,6 +1293,13 @@ class VideoEngine:
                     + "; ".join(f'"{b[2]}"' for b in buoni[:3])}
 
         vid_id, canale, titolo = buoni[0]
+        # La data del titolo vero ("25/4/1985 - ...") vale anche quando il nome del file
+        # l'ha persa o resa ambigua ("2541985"), anche se la descrizione non ha timestamp
+        from utils import extract_date_info
+        data, _, colore = extract_date_info(titolo)
+        data = data if colore == "green" else None
+        if solo_data:
+            return {"esito": "ok", "data": data, "messaggio": f"trovato \"{titolo}\" ({canale})"}
         try:
             desc = await _yt("--skip-download", "--print", "description",
                              f"https://www.youtube.com/watch?v={vid_id}")
@@ -1264,14 +1307,9 @@ class VideoEngine:
             return {"esito": "errore", "messaggio": f"descrizione di \"{titolo}\" non letta ({e})"}
         righe = self._righe_txt(desc)
         if not righe:
-            return {"esito": "no_timestamp",
+            return {"esito": "no_timestamp", "data": data,
                     "messaggio": f"trovato \"{titolo}\" ({canale}), ma la descrizione non ha timestamp"}
-        # La data del titolo vero ("25/4/1985 - ...") vale anche quando il nome del file
-        # l'ha persa o resa ambigua ("2541985")
-        from utils import extract_date_info
-        data, _, colore = extract_date_info(titolo)
-        return {"esito": "ok", "txt": "\n".join(righe),
-                "data": data if colore == "green" else None,
+        return {"esito": "ok", "txt": "\n".join(righe), "data": data,
                 "messaggio": f"trovato \"{titolo}\" ({canale}), {len(righe)} righe"}
 
     # ── DOWNLOAD PLAYLIST ─────────────────────────────────────────────────
