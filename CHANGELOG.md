@@ -18,6 +18,9 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 Riconosce anche i nomi scaricati con altri programmi, con la data senza barre e il titolo troncato ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera", "341985 RaiTre ... e prom" → "3/4/1985 - RaiTre - ... e promo"); le date ambigue ("1111985") vengono provate in entrambe le letture. Se non trova un titolo compatibile, se ne trova più di uno o se il video non ha timestamp lo dice, senza mai scegliere a caso
 - 🇬🇧 Also recognises names downloaded with other programs, with the date without slashes and a truncated title ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera", "341985 RaiTre ... e prom" → "3/4/1985 - RaiTre - ... e promo"); ambiguous dates ("1111985") are tried with both readings. If no matching title is found, more than one matches, or the video has no timestamps, it says so, never picking at random
 
+- 🇮🇹 **Data dal titolo** — quando il video viene trovato, anche la data viene presa dal titolo YouTube ("2541985" → 25-04-1985) e la pillola diventa tutta verde; viene inserita solo se la data manca o è incerta, mai sopra una data inserita a mano o già riconosciuta dal nome (se è diversa compare un avviso nel log)
+- 🇬🇧 **Date from the title** — when the video is found, the date is also taken from the YouTube title ("2541985" → 25-04-1985) and the pill turns fully green; it is filled in only when the date is missing or uncertain, never over a date entered by hand or already recognised from the name (if they differ, a warning appears in the log)
+
 ---
 
 ## 🎬 Spot Cutter 1.3.4

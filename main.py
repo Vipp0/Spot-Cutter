@@ -580,6 +580,7 @@ class TxtEditorDialog(QDialog):
         self.setModal(True)
         self._vid_name = vid_name
         self._ricerca  = None   # (thread, worker) della ricerca su YouTube in corso
+        self.data_trovata = None   # data dal titolo YouTube, applicata al salvataggio
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -650,7 +651,9 @@ class TxtEditorDialog(QDialog):
                 self._lbl_cerca.setText("Testo trovato ma non inserito.")
                 return
         self._editor.setPlainText(r["txt"])
-        self._lbl_cerca.setText(f"✅ {r['messaggio'][:1].upper()}{r['messaggio'][1:]}. "
+        self.data_trovata = r.get("data")
+        data = f" Data dal titolo: {self.data_trovata}." if self.data_trovata else ""
+        self._lbl_cerca.setText(f"✅ {r['messaggio'][:1].upper()}{r['messaggio'][1:]}.{data} "
                                 "Controlla e premi Salva.")
 
     def _stacca_ricerca(self):
@@ -2316,11 +2319,36 @@ class SpotCutterApp(QMainWindow):
                 self.state["queue_files"][i] = (item[0], f"{base}.txt", item[2])
 
         self._on_log(f"✅ TXT salvato: {base}.txt", "green")
+        self._applica_data_youtube(vid_name, dlg.data_trovata)
         self.render_queue()
 
     # ══════════════════════════════════════════════════════════════════════
     # TXT MANCANTI DA YOUTUBE
     # ══════════════════════════════════════════════════════════════════════
+
+    def _applica_data_youtube(self, vid: str, data: str | None):
+        """
+        Usa la data del titolo YouTube solo dove la pillola non è già verde: mai sopra una
+        data inserita a mano né sopra una data riconosciuta dal nome del file (se quest'ultima
+        è diversa, lo segnala nel log).
+        """
+        if not data:
+            return
+        base = os.path.splitext(vid)[0]
+        for i, (v, t, manuale) in enumerate(self.state["queue_files"]):
+            if v != vid:
+                continue
+            if manuale and manuale.strip() not in ("", "--"):
+                return
+            data_file, _, colore = extract_date_info(v)
+            if colore == "green":
+                if data_file != data:
+                    self._on_log(f"⚠️ {base}: la data nel nome ({data_file}) è diversa da quella "
+                                 f"del titolo YouTube ({data}), controlla.", "orange")
+                return
+            self.state["queue_files"][i] = (v, t, data)
+            self._on_log(f"📅 {base}: data dal titolo YouTube {data}.", "green")
+            return
 
     def _txt_presente(self, vid_name: str, cartella: str | None = None) -> bool:
         cartella = self.state.get("current_dir", "") if cartella is None else cartella
@@ -2374,6 +2402,7 @@ class SpotCutterApp(QMainWindow):
             for i, item in enumerate(self.state["queue_files"]):
                 if item[0] == vid:
                     self.state["queue_files"][i] = (item[0], f"{base}.txt", item[2])
+            self._applica_data_youtube(vid, r.get("data"))
             self.render_queue()
 
     @Slot()

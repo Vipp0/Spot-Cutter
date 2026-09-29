@@ -1119,7 +1119,7 @@ class VideoEngine:
         per i video già scaricati senza txt. Non sceglie mai a caso: accetta solo un titolo
         uguale al nome del file (o di cui il nome è l'inizio, per i nomi troncati).
         Ritorna {"esito": "ok" | "no_timestamp" | "non_trovato" | "ambiguo" | "errore",
-                 "messaggio": ..., "txt": ... (solo se ok)}.
+                 "messaggio": ..., "txt" e "data" ("GG-MM-AAAA" dal titolo, o None) solo se ok}.
         """
         c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
@@ -1185,7 +1185,12 @@ class VideoEngine:
         if not righe:
             return {"esito": "no_timestamp",
                     "messaggio": f"trovato \"{titolo}\" ({canale}), ma la descrizione non ha timestamp"}
+        # La data del titolo vero ("25/4/1985 - ...") vale anche quando il nome del file
+        # l'ha persa o resa ambigua ("2541985")
+        from utils import extract_date_info
+        data, _, colore = extract_date_info(titolo)
         return {"esito": "ok", "txt": "\n".join(righe),
+                "data": data if colore == "green" else None,
                 "messaggio": f"trovato \"{titolo}\" ({canale}), {len(righe)} righe"}
 
     # ── DOWNLOAD YOUTUBE ──────────────────────────────────────────────────
