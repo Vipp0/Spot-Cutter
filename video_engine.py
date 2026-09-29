@@ -1136,20 +1136,34 @@ class VideoEngine:
             return out.decode("utf-8", errors="replace")
 
         nf = self._norm_titolo(os.path.splitext(vid_name)[0])
+
+        def compatibili(cand):
+            return [(v, ch, tit) for v, (ch, tit) in cand.items()
+                    if (nt := self._norm_titolo(tit)) == nf or (len(nf) >= 20 and nt.startswith(nf))]
+
+        # Nei nomi troncati l'ultima parola è spezzata ("... e prom") e YouTube con quella
+        # non trova nulla: se la ricerca completa fallisce si riprova senza l'ultima parola.
+        # Il confronto dei titoli resta sul nome intero. Le letture di una data ambigua si
+        # cercano sempre tutte, così due video compatibili risultano ambigui.
         candidati = {}
         try:
             for q in self._query_da_file(vid_name):
-                out = await _yt("--flat-playlist", "--print", "%(id)s\t%(channel)s\t%(title)s",
-                                f"ytsearch8:{q}")
-                for riga in out.splitlines():
-                    parti = riga.split("\t")
-                    if len(parti) == 3:
-                        candidati.setdefault(parti[0], (parti[1], parti[2]))
+                ricerche = [q] + ([q.rsplit(" ", 1)[0]] if len(q.split()) >= 4 else [])
+                for r in ricerche:
+                    trovati = {}
+                    out = await _yt("--flat-playlist", "--print", "%(id)s\t%(channel)s\t%(title)s",
+                                    f"ytsearch8:{r}")
+                    for riga in out.splitlines():
+                        parti = riga.split("\t")
+                        if len(parti) == 3:
+                            trovati.setdefault(parti[0], (parti[1], parti[2]))
+                    candidati.update(trovati)
+                    if compatibili(trovati):
+                        break
         except Exception as e:
             return {"esito": "errore", "messaggio": f"ricerca su YouTube non riuscita ({e})"}
 
-        buoni = [(v, ch, tit) for v, (ch, tit) in candidati.items()
-                 if (nt := self._norm_titolo(tit)) == nf or (len(nf) >= 20 and nt.startswith(nf))]
+        buoni = compatibili(candidati)
         if len(buoni) > 1:
             esatti = [b for b in buoni if self._norm_titolo(b[2]) == nf]
             buoni = esatti or buoni

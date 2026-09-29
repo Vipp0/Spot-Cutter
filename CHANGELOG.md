@@ -15,8 +15,8 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Cerca txt mancanti** — un pulsante nella barra della coda recupera in un colpo i txt di tutti i video che non ce l'hanno; i txt già presenti non vengono mai toccati
 - 🇬🇧 **Search missing txt** — a button in the queue toolbar fetches the txt for every video that has none in one go; existing txt files are never touched
 
-- 🇮🇹 Riconosce anche i nomi scaricati con altri programmi, con la data senza barre e il titolo troncato ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera"); se non trova un titolo compatibile o il video non ha timestamp lo dice, senza mai scegliere a caso
-- 🇬🇧 Also recognises names downloaded with other programs, with the date without slashes and a truncated title ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera"); if no matching title is found or the video has no timestamps it says so, never picking at random
+- 🇮🇹 Riconosce anche i nomi scaricati con altri programmi, con la data senza barre e il titolo troncato ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera", "341985 RaiTre ... e prom" → "3/4/1985 - RaiTre - ... e promo"); le date ambigue ("1111985") vengono provate in entrambe le letture. Se non trova un titolo compatibile, se ne trova più di uno o se il video non ha timestamp lo dice, senza mai scegliere a caso
+- 🇬🇧 Also recognises names downloaded with other programs, with the date without slashes and a truncated title ("2541985 RaiDue ... TG2 Staser" → "25/4/1985 - RaiDue - ... TG2 Stasera", "341985 RaiTre ... e prom" → "3/4/1985 - RaiTre - ... e promo"); ambiguous dates ("1111985") are tried with both readings. If no matching title is found, more than one matches, or the video has no timestamps, it says so, never picking at random
 
 ---
 
