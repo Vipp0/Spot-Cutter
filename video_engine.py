@@ -273,15 +273,7 @@ class VideoEngine:
             # e apre quello successivo (fine nero - cuscinetto inizio).
             timestamps = [s["t"] for s in spot_list]
             tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll, colorati)
-            # Un nero lungo può essere l'apertura scura dello spot successivo (Super Faust:
-            # 8s di buio col sonoro, poi compare la bomboletta): se dopo un silenzio il suono
-            # riparte ben prima che torni l'immagine, il clip parte da lì. Le pause vere
-            # restano in silenzio fino alla fine del nero e non cambiano.
-            for tg in tagli:
-                if tg and tg["tipo"] == "nero" and tg["b"] - tg["a"] >= NERO_LUNGO:
-                    inizio = await self._inizio_suono(video_path_completo, tg["a"], tg["b"], c_flags)
-                    if inizio is not None and inizio <= tg["b"] - ANTICIPO_SUONO:
-                        tg["b_suono"], tg["b"] = tg["b"], inizio
+            await self._applica_suono(tagli, video_path_completo, c_flags)
             if n_campioni >= 3:
                 await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
                                f"(misurato su {n_campioni} stacchi).", "grey")
@@ -961,12 +953,22 @@ class VideoEngine:
         except Exception:
             return None
 
-    async def _inizio_suono(self, video, a, b, c_flags) -> float | None:
+    async def _applica_suono(self, tagli, video, c_flags):
         """
-        Dentro il nero a-b: inizio dell'ultimo tratto di suono che arriva fino alla fine del
-        nero, se prima c'è un silenzio. None se il nero è muto in fondo, se il suono c'è per
-        tutto il nero (nessuno stacco sentito) o se l'audio non si legge.
+        Un nero lungo può essere l'apertura scura dello spot successivo (Super Faust: 8s di
+        buio col sonoro, poi compare la bomboletta): se dopo un silenzio il suono riparte ben
+        prima che torni l'immagine, il clip parte da lì ("b_suono" = fine del nero originale).
+        Le pause vere restano in silenzio fino alla fine del nero e non cambiano.
         """
+        for tg in tagli:
+            if tg and tg["tipo"] == "nero" and tg["b"] - tg["a"] >= NERO_LUNGO:
+                livelli = await self._livelli_audio(video, tg["a"], tg["b"], c_flags)
+                inizio = self._inizio_suono(livelli)
+                if inizio is not None and inizio <= tg["b"] - ANTICIPO_SUONO:
+                    tg["b_suono"], tg["b"] = tg["b"], inizio
+
+    async def _livelli_audio(self, video, a, b, c_flags) -> list:
+        """Livello dell'audio (dB RMS) ogni 0.1s tra a e b: [(tempo, dB)]; [] se non si legge."""
         cmd = [get_tool_path('ffmpeg'), '-v', 'error', '-ss', f"{a:.2f}", '-i', video,
                '-t', f"{b - a:.2f}", '-vn', '-af',
                "aresample=44100,asetnsamples=n=4410,astats=metadata=1:reset=1,"
@@ -977,7 +979,7 @@ class VideoEngine:
                 creationflags=c_flags)
             out, _ = await asyncio.wait_for(proc.communicate(), 60)
         except (OSError, asyncio.TimeoutError):
-            return None
+            return []
         livelli, t = [], None
         for riga in out.decode(errors="ignore").splitlines():
             if "pts_time:" in riga:
@@ -985,6 +987,15 @@ class VideoEngine:
             elif "RMS_level=" in riga and t is not None:
                 v = riga.split("=")[1]
                 livelli.append((t, -120.0 if "inf" in v else float(v)))
+        return livelli
+
+    @staticmethod
+    def _inizio_suono(livelli) -> float | None:
+        """
+        Dentro un nero: inizio dell'ultimo tratto di suono che arriva fino alla fine del nero,
+        se prima c'è un silenzio. None se il nero è muto in fondo, se il suono c'è per tutto
+        il nero (nessuno stacco sentito) o se l'audio non si legge.
+        """
         i = len(livelli)
         while i > 0 and livelli[i - 1][1] > DB_SUONO:
             i -= 1

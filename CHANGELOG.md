@@ -15,6 +15,11 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Spot che iniziano al buio** — alcuni spot si aprono con qualche secondo di immagine quasi nera col sonoro (Super Faust, la sagoma di "Chiamalo amore", le scritte su nero di "Disco d'oro", il comunicato Fininvest battuto a macchina): il programma li scambiava per il nero tra due spot e il clip perdeva da 2 a 7 secondi di inizio. Ora nei neri lunghi (almeno 2 secondi) si ascolta l'audio: se dopo un silenzio il suono riparte ben prima che torni l'immagine, il clip parte dal suono. Le pause vere restano mute fino alla fine del nero e non cambiano (132 su 138 neri lunghi nei video di prova)
 - 🇬🇧 **Spots that start in the dark** — some spots open with a few seconds of almost black picture with sound (Super Faust, the silhouette in "Chiamalo amore", the text on black of "Disco d'oro", the typed Fininvest announcement): the program took them for the black between two spots and the clip lost 2 to 7 seconds of its start. Now the audio of long blacks (at least 2 seconds) is checked: if after a silence the sound starts well before the picture returns, the clip starts from the sound. Real pauses stay silent until the end of the black and do not change (132 of 138 long blacks in the test videos)
 
+### 🛠️ Sviluppo / Development
+
+- 🇮🇹 **Prova anti-regressione** (`tools/regressione.py`, solo per lo sviluppo, non fa parte del programma) — dopo ogni modifica al motore ricalcola in pochi secondi i tagli di tutti i video di prova e dice quali cambiano, con i fogli di fotogrammi prima/dopo; può anche confrontare con il motore di una versione precedente
+- 🇬🇧 **Regression check** (`tools/regressione.py`, development only, not part of the program) — after each engine change it recalculates the cuts of all test videos in a few seconds and lists which ones change, with before/after frame sheets; it can also compare with the engine of an earlier version
+
 ---
 
 ## 🎬 Spot Cutter 1.3.6
