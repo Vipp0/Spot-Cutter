@@ -274,7 +274,8 @@ class VideoCard(QFrame):
     def __init__(self, idx: int, vid: str, has_txt: bool,
                  status_text: str, status_color: str,
                  is_first: bool, is_last: bool,
-                 is_running: bool, current_dir: str = "", parent=None):
+                 is_running: bool, current_dir: str = "", parent=None,
+                 date_tooltip: str | None = None):
         super().__init__(parent)
         self.idx = idx
         self.vid = vid
@@ -365,6 +366,8 @@ class VideoCard(QFrame):
         self._txt_ignorate = []
         self._update_txt_tooltip()
         self.set_status(status_text, status_color)
+        if date_tooltip:
+            self.date_part.setToolTip(date_tooltip)
 
         # Click eventi
         self.txt_part.mousePressEvent = lambda e: self.sig_edit_txt.emit(self.vid)
@@ -422,7 +425,9 @@ class VideoCard(QFrame):
         txt_bg = (COLOR_ARANCIO if self._txt_ignorate else COLOR_VERDE) if has_txt else COLOR_ROSSO
         
         # 2. Destra (DATA): Basata sulle icone
-        if "✅" in text:
+        if "⏳" in text:
+            date_bg = "#78909C"   # verifica online in corso
+        elif "✅" in text:
             date_bg = COLOR_VERDE
         elif "⚠️" in text:
             date_bg = COLOR_ARANCIO
@@ -450,7 +455,10 @@ class VideoCard(QFrame):
         )
 
         # Tooltip pillola DATA
-        if "✅" in text and "Elaborato" in text:
+        if "⏳" in text:
+            self.date_part.setToolTip("⏳ Verifica online della data in corso…\n"
+                                      "Tra qualche secondo diventa verde, se il titolo YouTube la conferma.")
+        elif "✅" in text and "Elaborato" in text:
             self.date_part.setToolTip("✅ Video già elaborato\nClicca per modificare la data.")
         elif "✅" in text and "manuale" in text.lower():
             self.date_part.setToolTip("✅ Data inserita manualmente\nClicca per modificarla.")
@@ -1257,6 +1265,9 @@ class SpotCutterApp(QMainWindow):
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
         self._date_verificate = set()   # video già mandati alla verifica online della data
+        self._date_in_verifica = set()  # verifica in corso: pillola grigio-azzurra con la clessidra
+        self._date_esiti = {}           # video -> perché la data non è stata confermata online
+        self._date_youtube = {}         # video -> data presa dal titolo YouTube
         self._yt_playlist = False           # scelta "Intera playlist" per il prossimo download
         self._yt_playlist_attiva = False    # download di playlist in corso
         self._yt_playlist_aggiunti = 0      # video della playlist entrati in coda
@@ -2013,7 +2024,8 @@ class SpotCutterApp(QMainWindow):
 
             # --- 3. Decisione Semaforo ---
             if not is_valid:
-                st, sc = f"⛔ Invalida: {date_to_check}", "#FF3B30"
+                st = f"⛔ Invalida: {date_to_check}" if date_to_check else "⛔ Nessuna data"
+                sc = "#FF3B30"
             elif not date_to_check or date_to_check == "00-00-0000":
                 st, sc = "⚠️ Data: MANCANTE", "#FF9500"
             elif manual_date:
@@ -2022,6 +2034,19 @@ class SpotCutterApp(QMainWindow):
                 st, sc = f"✅ Data: {ext_date}", "#4CD964"
             else:
                 st, sc = f"⚠️ Data: {ext_date}", "#FF9500"
+
+            # Verifica online: in corso (clessidra) o non riuscita (il motivo nel tooltip)
+            manuale = manual_date and manual_date.strip() not in ("", "--")
+            tip_data = None
+            if not manuale and vid in self._date_in_verifica:
+                st, sc = (f"Data: {ext_date} ⏳" if ext_date else "Data: verifica… ⏳"), "#78909C"
+            elif not manuale and vid in self._date_esiti:
+                tip_data = (f"⚠️ Data non confermata online: {self._date_esiti[vid]}.\n"
+                            "Clicca per inserirla o correggerla.")
+            elif manuale and is_valid:
+                tip_data = ("✅ Data confermata dal titolo YouTube\nClicca per modificarla."
+                            if self._date_youtube.get(vid) == manual_date
+                            else "✅ Data inserita a mano\nClicca per modificarla.")
 
             # Se manca il TXT, il colore globale della card è Rosso, ma il testo 'st' resta quello della data
             if not has_txt:
@@ -2050,7 +2075,8 @@ class SpotCutterApp(QMainWindow):
                 status_text=st, status_color=sc,
                 is_first=(i == 0), is_last=(i == total - 1),
                 is_running=running,
-                current_dir=self.state.get("current_dir", ""))
+                current_dir=self.state.get("current_dir", ""),
+                date_tooltip=None if is_done else tip_data)
 
             card.sig_move_up.connect(self._move_item_up)
             card.sig_move_down.connect(self._move_item_down)
@@ -2602,6 +2628,7 @@ class SpotCutterApp(QMainWindow):
                                  f"del titolo YouTube ({data}), controlla.", "orange")
                 return
             self.state["queue_files"][i] = (v, t, data)
+            self._date_youtube[v] = data
             self._on_log(f"📅 {base}: data dal titolo YouTube {data}.", "green")
             return
 
@@ -2655,20 +2682,27 @@ class SpotCutterApp(QMainWindow):
             if extract_date_info(vid)[2] == "green":
                 continue
             self._date_verificate.add(vid)
+            self._date_in_verifica.add(vid)
             da_fare.append(vid)
         if da_fare:
             self._on_log(f"📅 Verifica online della data: {len(da_fare)} video...", "cyan")
             self._avvia_ricerca_youtube(da_fare, self._on_data_verificata, solo_data=True)
+            self.render_queue()   # mostra subito la clessidra
 
     @Slot(str, dict)
     def _on_data_verificata(self, vid: str, r: dict):
         base = os.path.splitext(vid)[0]
         data = r.get("data")
+        self._date_in_verifica.discard(vid)
         if not data:
-            motivo = r["messaggio"] if r["esito"] != "ok" else "il titolo YouTube non ha una data completa"
+            motivo = (r["messaggio"] if r["esito"] != "ok"
+                      else "il titolo YouTube non ha una data certa (solo l'anno, o una data recente)")
+            self._date_esiti[vid] = motivo
             self._on_log(f"⚠️ {base}: data non confermata online ({motivo}), controllala a mano.",
                          "orange")
+            self.render_queue()
             return
+        self._date_esiti.pop(vid, None)
         stimata = extract_date_info(vid)[0]
         if stimata and not stimata.startswith("01-01-") and stimata != data:
             self._on_log(f"⚠️ {base}: dal nome sembrava {stimata}, ma il titolo YouTube dice {data}.",
