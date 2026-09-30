@@ -34,6 +34,12 @@ from utils import (
 # blu saturo arriva a 70.
 SAT_NERO = 10
 
+# Neri lunghi e suono (vedi _inizio_suono): si ascoltano i neri di almeno NERO_LUNGO secondi;
+# se il suono riparte almeno ANTICIPO_SUONO secondi prima della fine del nero, il nero è
+# l'apertura scura dello spot. Livelli in dB (RMS su 0.1s).
+NERO_LUNGO, ANTICIPO_SUONO = 2.0, 2.0
+DB_SUONO, DB_SILENZIO = -45.0, -50.0
+
 # Tipo per le callback di progresso: funzione async che accetta (messaggio, colore)
 LogCallback      = Callable[[str, str], Awaitable[None]]
 ProgressCallback = Callable[[float, str], Awaitable[None]]  # (valore 0.0-1.0, label)
@@ -267,6 +273,15 @@ class VideoEngine:
             # e apre quello successivo (fine nero - cuscinetto inizio).
             timestamps = [s["t"] for s in spot_list]
             tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll, colorati)
+            # Un nero lungo può essere l'apertura scura dello spot successivo (Super Faust:
+            # 8s di buio col sonoro, poi compare la bomboletta): se dopo un silenzio il suono
+            # riparte ben prima che torni l'immagine, il clip parte da lì. Le pause vere
+            # restano in silenzio fino alla fine del nero e non cambiano.
+            for tg in tagli:
+                if tg and tg["tipo"] == "nero" and tg["b"] - tg["a"] >= NERO_LUNGO:
+                    inizio = await self._inizio_suono(video_path_completo, tg["a"], tg["b"], c_flags)
+                    if inizio is not None and inizio <= tg["b"] - ANTICIPO_SUONO:
+                        tg["b_suono"], tg["b"] = tg["b"], inizio
             if n_campioni >= 3:
                 await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
                                f"(misurato su {n_campioni} stacchi).", "grey")
@@ -277,7 +292,11 @@ class VideoEngine:
                 if tg is None:
                     punti.append((None, max(0.0, t - v_cusc_i)))
                 elif tg["tipo"] == "nero":
-                    corr = (f", fine corretta da {tg['b_base']:.2f}s" if "b_base" in tg else "")
+                    if "b_suono" in tg:
+                        corr = (f", apertura scura dello spot: si parte dal suono, non dalla "
+                                f"fine del nero a {tg['b_suono']:.2f}s")
+                    else:
+                        corr = (f", fine corretta da {tg['b_base']:.2f}s" if "b_base" in tg else "")
                     await self.log(f"Stacco {j} ({mmss}): nero {tg['a']:.2f}-{tg['b']:.2f}s "
                                    f"(sensibilità {tg['sens']}{corr})", "grey")
                     # La fine del clip precedente resta dentro il nero: con un nero di soli
@@ -794,8 +813,11 @@ class VideoEngine:
            bene se dista al massimo toll dal punto atteso (0 se il punto cade dentro il nero,
            così funzionano anche i neri lunghi), in ordine e senza mai riusare lo stesso nero.
            Un timestamp uguale al precedente non dice nulla: prende il primo nero libero.
-        4. Stacchi rimasti senza nero: sensibilità più permissive, poi il cambio di scena più
-           forte vicino al punto atteso (stacco netto), infine il punto atteso stesso.
+        4. Stacchi rimasti senza nero: sensibilità più permissive, poi il cambio di scena
+           (stacco netto) abbastanza forte più vicino al punto atteso, infine il punto atteso
+           stesso. Per uno stacco netto il punto atteso usa l'anticipo misurato sull'inizio dei
+           neri, non sulla fine: il txt segna l'inizio del nero e su uno stacco netto non c'è
+           nero da attraversare (con i bumper di 2s si prendeva lo stacco dopo).
         5. La fine di ogni nero si allunga con le sensibilità più permissive (nero VHS che
            schiarisce), fermandosi al primo fotogramma colorato (vedi colorati).
 
@@ -821,13 +843,17 @@ class VideoEngine:
         neri = {th: unisci(v) for th, v in neri.items()}
         base = neri[levels[0]]
 
-        campioni = []
+        campioni, campioni_inizio = [], []
         for t in timestamps:
             c = [b for b in base if abs(b[1] - t) <= toll]
             if len(c) == 1 and c[0][1] - c[0][0] <= MAX_CORTO:
                 campioni.append(c[0][1] - t)
+                campioni_inizio.append(c[0][0] - t)
         scarto = statistics.median(campioni) if len(campioni) >= 3 else 0.0
         attesi = [t + scarto for t in timestamps]
+        # Punto atteso di uno stacco netto (senza nero): dove il nero inizierebbe
+        scarto_inizio = statistics.median(campioni_inizio) if len(campioni_inizio) >= 3 else 0.0
+        attesi_netti = [t + scarto_inizio for t in timestamps]
         n = len(attesi)
 
         # 3. Programmazione dinamica: stato = indice dell'ultimo nero usato
@@ -873,9 +899,12 @@ class VideoEngine:
                     tagli[k] = {"tipo": "nero", "a": b[0], "b": b[1], "sens": th}
                     break
             if not tagli[k] and k > 0:   # il primo spot senza nero parte dal suo timestamp
+                p = attesi_netti[k]
                 c = [s for s in scene if lo < s[0] < hi and abs(s[0] - p) <= toll and s[1] >= SCENA_MIN]
                 if c:
-                    s = max(c, key=lambda x: x[1])
+                    # Il più vicino, non il più forte: negli spot molto montati uno stacco
+                    # interno può essere più netto di quello vero
+                    s = min(c, key=lambda x: abs(x[0] - p))
                     tagli[k] = {"tipo": "scena", "a": s[0], "b": s[0]}
                 else:
                     q = min(max(p, lo), hi)
@@ -931,6 +960,37 @@ class VideoEngine:
             return spot_list
         except Exception:
             return None
+
+    async def _inizio_suono(self, video, a, b, c_flags) -> float | None:
+        """
+        Dentro il nero a-b: inizio dell'ultimo tratto di suono che arriva fino alla fine del
+        nero, se prima c'è un silenzio. None se il nero è muto in fondo, se il suono c'è per
+        tutto il nero (nessuno stacco sentito) o se l'audio non si legge.
+        """
+        cmd = [get_tool_path('ffmpeg'), '-v', 'error', '-ss', f"{a:.2f}", '-i', video,
+               '-t', f"{b - a:.2f}", '-vn', '-af',
+               "aresample=44100,asetnsamples=n=4410,astats=metadata=1:reset=1,"
+               "ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-", '-f', 'null', '-']
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                creationflags=c_flags)
+            out, _ = await asyncio.wait_for(proc.communicate(), 60)
+        except (OSError, asyncio.TimeoutError):
+            return None
+        livelli, t = [], None
+        for riga in out.decode(errors="ignore").splitlines():
+            if "pts_time:" in riga:
+                t = a + float(riga.split("pts_time:")[1])
+            elif "RMS_level=" in riga and t is not None:
+                v = riga.split("=")[1]
+                livelli.append((t, -120.0 if "inf" in v else float(v)))
+        i = len(livelli)
+        while i > 0 and livelli[i - 1][1] > DB_SUONO:
+            i -= 1
+        if i == len(livelli) or i == 0 or not any(db < DB_SILENZIO for _, db in livelli[:i]):
+            return None
+        return livelli[i][0]
 
     @staticmethod
     async def _scarta_parziale(out_f):

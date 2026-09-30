@@ -5,6 +5,18 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.7
+
+### ✨ Miglioramenti del motore / Engine improvements
+
+- 🇮🇹 **Stacchi netti senza nero al punto giusto** — dove tra uno spot e l'altro non c'è il nero (es. Canale 5 del 1984, bumper di 2 secondi) il taglio si cercava un secondo troppo avanti e finiva sullo stacco successivo: lo spot precedente si prendeva il bumper e lo spot dopo perdeva i primi secondi ("Suona con Ricordi"). Ora il punto atteso di uno stacco netto parte da dove inizierebbe il nero e, tra i cambi di scena abbastanza netti, vince il più vicino invece del più forte (negli spot molto montati uno stacco interno può essere più netto di quello vero). Su 71 video di prova: 23 tagli migliorano, 2 punti già stimati si spostano di mezzo secondo, i tagli sul nero non cambiano
+- 🇬🇧 **Sharp cuts without black in the right place** — where there is no black between spots (e.g. Canale 5 in 1984, 2-second bumpers) the cut was searched one second too late and landed on the next scene change: the previous spot took the bumper and the next spot lost its first seconds ("Suona con Ricordi"). Now the expected point of a sharp cut starts where the black would begin and, among sufficiently sharp scene changes, the nearest wins instead of the strongest (in heavily edited spots an inner cut can be sharper than the real one). On 71 test videos: 23 cuts improve, 2 already estimated points move by half a second, cuts on black do not change
+
+- 🇮🇹 **Spot che iniziano al buio** — alcuni spot si aprono con qualche secondo di immagine quasi nera col sonoro (Super Faust, la sagoma di "Chiamalo amore", le scritte su nero di "Disco d'oro", il comunicato Fininvest battuto a macchina): il programma li scambiava per il nero tra due spot e il clip perdeva da 2 a 7 secondi di inizio. Ora nei neri lunghi (almeno 2 secondi) si ascolta l'audio: se dopo un silenzio il suono riparte ben prima che torni l'immagine, il clip parte dal suono. Le pause vere restano mute fino alla fine del nero e non cambiano (132 su 138 neri lunghi nei video di prova)
+- 🇬🇧 **Spots that start in the dark** — some spots open with a few seconds of almost black picture with sound (Super Faust, the silhouette in "Chiamalo amore", the text on black of "Disco d'oro", the typed Fininvest announcement): the program took them for the black between two spots and the clip lost 2 to 7 seconds of its start. Now the audio of long blacks (at least 2 seconds) is checked: if after a silence the sound starts well before the picture returns, the clip starts from the sound. Real pauses stay silent until the end of the black and do not change (132 of 138 long blacks in the test videos)
+
+---
+
 ## 🎬 Spot Cutter 1.3.6
 
 ### ✨ Nuove funzionalità / New features
