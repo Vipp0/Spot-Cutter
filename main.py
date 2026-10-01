@@ -3018,17 +3018,42 @@ class SpotCutterApp(QMainWindow):
     def closeEvent(self, event):
         """Gestisce la chiusura pulita dell'app e dei thread con pulsanti in italiano."""
         
-        # 1. Creiamo la box manualmente per tradurre i tasti
+        # 1. Il messaggio dice cosa si interrompe davvero (niente, se il programma è fermo)
+        def attivo(nome):
+            th = getattr(self, nome, None)
+            try:
+                return bool(th) and th.isRunning()
+            except RuntimeError:   # thread già distrutto da Qt
+                return False
+
+        in_corso = []
+        if self.state.get("running") or attivo("_worker_thread"):
+            in_corso.append("il taglio dei video: alla riapertura potrai riprendere, i video già "
+                            "finiti vengono saltati e quello a metà viene rifatto senza doppioni")
+        if attivo("_yt_thread"):
+            in_corso.append("un download da YouTube: rimettendo lo stesso link riparte da dove "
+                            "era arrivato")
+        if self._ricerche_txt:
+            in_corso.append("una ricerca su YouTube (txt o date): non si perde niente")
+
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle('Esci')
-        msg_box.setText("Vuoi davvero uscire? Le operazioni in corso verranno interrotte.")
-        msg_box.setIcon(QMessageBox.Icon.Question)
-        
-        # Pulsanti personalizzati
-        si_button = msg_box.addButton("Sì", QMessageBox.ButtonRole.YesRole)
-        no_button = msg_box.addButton("No", QMessageBox.ButtonRole.NoRole)
-        msg_box.setDefaultButton(no_button)
-        
+        if in_corso:
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.setText("Se esci, si interrompe:\n\n" + "\n\n".join(f"• {x}." for x in in_corso))
+            si_button = msg_box.addButton("Esci", QMessageBox.ButtonRole.YesRole)
+            no_button = msg_box.addButton("Resta", QMessageBox.ButtonRole.NoRole)
+        else:
+            msg_box.setIcon(QMessageBox.Icon.Question)
+            testo = "Vuoi chiudere Spot Cutter?"
+            if self.state.get("queue_files"):
+                testo += "\n\nLa coda è salvata: te la riproporrò alla prossima apertura."
+            msg_box.setText(testo)
+            si_button = msg_box.addButton("Esci", QMessageBox.ButtonRole.YesRole)
+            no_button = msg_box.addButton("Annulla", QMessageBox.ButtonRole.NoRole)
+        # Con un lavoro in corso Invio non deve interromperlo; da fermo non c'è niente da perdere
+        msg_box.setDefaultButton(no_button if in_corso else si_button)
+
         msg_box.exec()
 
         if msg_box.clickedButton() == si_button:
