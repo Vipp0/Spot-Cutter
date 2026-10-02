@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.8
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **Niente falso errore sui video in bianco e nero** — nei video senza colori (o con colori molto sbiaditi) il log mostrava in rosso "Ricerca neri terminata con errore", anche se l'analisi era completa e i tagli giusti. Ora l'avviso compare solo per gli errori veri
+- 🇬🇧 **No false error on black-and-white videos** — in videos without colours (or with very faded colours) the log showed "Black search ended with an error" in red, even though the analysis was complete and the cuts correct. The warning now appears only for real errors
+
+---
+
 ## 🎬 Spot Cutter 1.3.7
 
 ### ✨ Miglioramenti del motore / Engine improvements

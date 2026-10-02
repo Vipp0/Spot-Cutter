@@ -754,6 +754,10 @@ class VideoEngine:
             )
             self._current_proc = proc
             buf = ""
+            # Nei video senza colori (bianco e nero o colori sbiaditi) nessun fotogramma passa
+            # la soglia SAT_NERO: quell'uscita resta vuota e ffmpeg chiude con un errore, anche
+            # se ha letto tutto il video e i risultati sono completi
+            uscita_vuota = False
             while True:
                 if not state["running"]:
                     await safe_kill_process(proc)
@@ -775,12 +779,14 @@ class VideoEngine:
                         scene.append((float(m.group(2)), float(m.group(1))))
                     elif m := rx_col.search(line):
                         colorati.append(float(m.group(1)))
+                    elif "received no packets" in line:
+                        uscita_vuota = True
                     elif duration > 0 and (tm := re.search(r"time=(\d{2}:\d{2}:\d{2}\.\d{2})", line)):
                         perc = min(0.99, get_seconds(tm.group(1)) / duration)
                         await self.progress(perc, f"Ricerca neri: {int(perc * 100)}%")
             await proc.wait()
             self._current_proc = None
-            if proc.returncode != 0:
+            if proc.returncode != 0 and not (uscita_vuota and not colorati):
                 await self.log(f"⚠️ Ricerca neri terminata con errore (codice {proc.returncode})", "red")
             await self.log("Neri trovati: " + ", ".join(
                 f"{len(v)} a sensibilità {th}" for th, v in found.items()), "grey")
