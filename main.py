@@ -52,7 +52,7 @@ for exe in ("ffmpeg.exe", "ffprobe.exe"):
 # ── IMPORT MODULI PROGETTO ─────────────────────────────────────────────────
 from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
-    get_unique_filename, get_video_duration, righe_txt_ignorate,
+    get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
     get_seconds, get_tool_path, parse_settings, load_settings, save_settings,
 )
 from video_engine import VideoEngine
@@ -364,6 +364,7 @@ class VideoCard(QFrame):
         self.txt_part.setText(f"📄 {'TXT OK' if has_txt else 'NO TXT'}")
         # Tooltip anteprima TXT (prima dei colori: trova anche le righe ignorate)
         self._txt_ignorate = []
+        self._txt_fuori_ordine = []
         self._update_txt_tooltip()
         self.set_status(status_text, status_color)
         if date_tooltip:
@@ -402,6 +403,17 @@ class VideoCard(QFrame):
                            f"({len(self._txt_ignorate)}):\n{elenco}\n"
                            f"Se sono spot, restano attaccati al precedente. "
                            f"Clicca per correggere.\n\n{preview}")
+            # Orari doppi o che tornano indietro: può essere giusto, ma spesso è un errore
+            self._txt_fuori_ordine = righe_txt_fuori_ordine(txt_path)
+            if self._txt_fuori_ordine:
+                self.txt_part.setText("📄 TXT OK ⚠️")
+                elenco = "\n".join(f"  · {r}" for r in self._txt_fuori_ordine[:8])
+                if len(self._txt_fuori_ordine) > 8:
+                    elenco += f"\n  · ... e altre {len(self._txt_fuori_ordine) - 8}"
+                preview = (f"⚠️ Orario uguale o precedente alla riga prima "
+                           f"({len(self._txt_fuori_ordine)}):\n{elenco}\n"
+                           f"Va bene solo se iniziano davvero nello stesso secondo: "
+                           f"altrimenti clicca e correggi l'orario.\n\n{preview}")
             self.txt_part.setToolTip(preview)
         except Exception:
             self.txt_part.setToolTip("Impossibile leggere il file TXT.")
@@ -422,7 +434,8 @@ class VideoCard(QFrame):
         COLOR_BLU     = "#42A5F5" # Blu pastello
         
         # 1. Sinistra (TXT): Verde se OK, Arancio se ha righe ignorate, Rosso se manca
-        txt_bg = (COLOR_ARANCIO if self._txt_ignorate else COLOR_VERDE) if has_txt else COLOR_ROSSO
+        da_controllare = self._txt_ignorate or self._txt_fuori_ordine
+        txt_bg = (COLOR_ARANCIO if da_controllare else COLOR_VERDE) if has_txt else COLOR_ROSSO
         
         # 2. Destra (DATA): Basata sulle icone
         if "⏳" in text:

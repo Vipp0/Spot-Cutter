@@ -9,6 +9,12 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ### 🐛 Correzioni / Fixes
 
+- 🇮🇹 **Orario doppio nel txt: niente più spot schiacciati** — se due righe del txt avevano lo stesso orario per errore, la seconda poteva prendersi un nero di minuti prima e tutti gli spot in mezzo finivano schiacciati in un punto solo (clip da mezzo secondo e uno lunghissimo). Ora una riga con l'orario doppio prende un nero solo se è vicino al suo orario. Nei video di prova: 17 tagli tornano al loro posto, nessuno peggiora
+- 🇬🇧 **Duplicate time in the txt: no more squashed spots** — if two txt lines had the same time by mistake, the second could grab a black from minutes earlier and all the spots in between were squashed into a single point (half-second clips and one very long one). Now a line with a duplicate time takes a black only if it is near its time. In the test videos: 17 cuts go back to their place, none gets worse
+
+- 🇮🇹 **Avviso per gli orari doppi o fuori ordine** — quando una riga del txt ha l'orario uguale o precedente alla riga prima, la pillola TXT diventa arancione, il tooltip elenca le righe e il log lo segnala: va bene se i due pezzi iniziano davvero nello stesso secondo, altrimenti basta correggere l'orario nel txt
+- 🇬🇧 **Warning for duplicate or out-of-order times** — when a txt line has a time equal to or earlier than the previous line, the TXT pill turns orange, the tooltip lists the lines and the log reports it: fine if the two items really start in the same second, otherwise just correct the time in the txt
+
 - 🇮🇹 **Niente falso errore sui video in bianco e nero** — nei video senza colori (o con colori molto sbiaditi) il log mostrava in rosso "Ricerca neri terminata con errore", anche se l'analisi era completa e i tagli giusti. Ora l'avviso compare solo per gli errori veri
 - 🇬🇧 **No false error on black-and-white videos** — in videos without colours (or with very faded colours) the log showed "Black search ended with an error" in red, even though the analysis was complete and the cuts correct. The warning now appears only for real errors
 

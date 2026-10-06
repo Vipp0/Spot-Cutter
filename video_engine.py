@@ -26,7 +26,7 @@ def get_ytdlp_path() -> str:
 from utils import (
     get_seconds, get_unique_filename, get_video_duration,
     safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
-    get_tool_path, RIGA_TXT, righe_txt_ignorate
+    get_tool_path, RIGA_TXT, righe_txt_ignorate, righe_txt_fuori_ordine
 )
 
 # Saturazione media (0-~180) sopra la quale un fotogramma scuro non è nero ma contenuto:
@@ -267,6 +267,13 @@ class VideoEngine:
                     await self.log(f"   · {riga}", "orange")
                 if len(ignorate) > 10:
                     await self.log(f"   · ... e altre {len(ignorate) - 10}", "orange")
+            fuori_ordine = righe_txt_fuori_ordine(txt_path_completo)
+            if fuori_ordine:
+                await self.log(f"⚠️ Righe del txt con l'orario uguale o precedente alla riga prima "
+                               f"({len(fuori_ordine)}): va bene solo se iniziano davvero nello stesso "
+                               f"secondo, altrimenti correggi l'orario nel txt.", "orange")
+                for riga in fuori_ordine[:10]:
+                    await self.log(f"   · {riga}", "orange")
 
             # ── 3b. SCEGLI IL NERO DI OGNI STACCO ─────────────────────────
             # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
@@ -810,7 +817,8 @@ class VideoEngine:
         3. Alla sensibilità più severa gli stacchi si assegnano tutti insieme: un nero va
            bene se dista al massimo toll dal punto atteso (0 se il punto cade dentro il nero,
            così funzionano anche i neri lunghi), in ordine e senza mai riusare lo stesso nero.
-           Un timestamp uguale al precedente non dice nulla: prende il primo nero libero.
+           Un timestamp uguale al precedente non dice nulla: prende il primo nero libero,
+           purché non sia più di toll prima del suo orario.
         4. Stacchi rimasti senza nero: sensibilità più permissive, poi il cambio di scena
            (stacco netto) abbastanza forte più vicino al punto atteso, infine il punto atteso
            stesso. Per uno stacco netto il punto atteso usa l'anticipo misurato sull'inizio dei
@@ -867,7 +875,11 @@ class VideoEngine:
                     if duplicato:
                         if b[0] > limite:
                             break
-                        opzioni.append((j, costo + 0.001 * (j - ultimo), j))
+                        # Solo un nero vicino al suo orario: se nel txt l'orario doppio è
+                        # un errore, il primo nero libero può essere minuti prima e
+                        # schiaccerebbe lì tutti gli stacchi in mezzo
+                        if b[1] >= p - toll:
+                            opzioni.append((j, costo + 0.001 * (j - ultimo), j))
                     else:
                         if b[0] > p + toll:
                             break

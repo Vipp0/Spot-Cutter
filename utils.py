@@ -101,6 +101,19 @@ def righe_txt_ignorate(txt_path) -> list[str]:
     except OSError:
         return []
 
+def righe_txt_fuori_ordine(txt_path) -> list[str]:
+    """
+    Righe del txt con un orario uguale o precedente a quello della riga prima. A volte è
+    giusto (bumper e spot nello stesso secondo), a volte è un errore di chi ha scritto i
+    timestamp: il programma non può saperlo, quindi lo segnala.
+    """
+    try:
+        with open(txt_path, "r", encoding="utf-8", errors="replace") as f:
+            righe = [(get_seconds(m.group(1)), l.strip()) for l in f if (m := RIGA_TXT.search(l))]
+    except OSError:
+        return []
+    return [riga for (t_prima, _), (t, riga) in zip(righe, righe[1:]) if t <= t_prima]
+
 def is_valid_date(g, m, a):
     try:
         day, month, year = int(g), int(m), int(a)
