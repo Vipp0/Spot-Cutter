@@ -145,10 +145,11 @@ async def tagli_di(classe, dati):
     audio = dati.setdefault("audio", {})
     leggi_audio = eng._livelli_audio if hasattr(eng, "_livelli_audio") else None
 
-    async def livelli_salvati(video, a, b, c_flags):
-        chiave = f"{a:.3f}|{b:.3f}"
+    async def livelli_salvati(video, a, b, c_flags, passo=0.1):
+        chiave = f"{a:.3f}|{b:.3f}" + ("" if passo == 0.1 else f"|{passo}")
         if chiave not in audio:
-            audio[chiave] = await leggi_audio(video, a, b, c_flags)
+            audio[chiave] = (await leggi_audio(video, a, b, c_flags) if passo == 0.1
+                             else await leggi_audio(video, a, b, c_flags, passo=passo))
             dati["_nuovo_audio"] = True
         return [tuple(x) for x in audio[chiave]]
 
@@ -167,8 +168,10 @@ async def tagli_di(classe, dati):
         if hasattr(eng, "_applica_suono"):
             eng._livelli_audio = livelli_salvati
             await eng._applica_suono(tagli, dati["video"], FLAGS)
-    return [s["n"] for s in spots], [[t["tipo"], round(t["a"], 2), round(t["b"], 2)] if t else None
-                                    for t in tagli]
+    # la coda di suono (audio tagliato dopo lo stacco) si aggiunge solo dove c'è
+    return [s["n"] for s in spots], [[t["tipo"], round(t["a"], 2), round(t["b"], 2)]
+                                     + ([f"coda {t['coda']:.2f}"] if t.get("coda") else [])
+                                     if t else None for t in tagli]
 
 
 async def calcola(classe, video):
@@ -193,7 +196,8 @@ def mmss(t):
 
 
 def descrivi(t):
-    return "—" if t is None else f"{t[0]} {t[1]:.2f}" + (f"-{t[2]:.2f}" if t[2] != t[1] else "")
+    return "—" if t is None else (f"{t[0]} {t[1]:.2f}" + (f"-{t[2]:.2f}" if t[2] != t[1] else "")
+                                  + (f" ({t[3]})" if len(t) > 3 else ""))
 
 
 def confronta(prima, dopo):

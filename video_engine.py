@@ -40,6 +40,10 @@ SAT_NERO = 10
 NERO_LUNGO, ANTICIPO_SUONO = 2.0, 2.0
 DB_SUONO, DB_SILENZIO = -45.0, -50.0
 
+# Coda di suono dopo uno stacco netto (vedi _coda_suono): quanto può durare al massimo, sotto
+# quale durata non vale la pena spostare l'audio, e di quanti dB deve scendere per dirsi finita.
+CODA_MAX, CODA_MIN, CODA_CALO = 0.45, 0.06, 20.0
+
 # Tipo per le callback di progresso: funzione async che accetta (messaggio, colore)
 LogCallback      = Callable[[str, str], Awaitable[None]]
 ProgressCallback = Callable[[float, str], Awaitable[None]]  # (valore 0.0-1.0, label)
@@ -312,7 +316,7 @@ class VideoEngine:
             for j, (t, tg) in enumerate(zip(timestamps, tagli), 1):
                 mmss = f"{int(t) // 60:02d}:{int(t) % 60:02d}"
                 if tg is None:
-                    punti.append((None, max(0.0, t - v_cusc_i)))
+                    punti.append((None, max(0.0, t - v_cusc_i), 0.0))
                 elif tg["tipo"] == "nero":
                     if "b_suono" in tg:
                         corr = (f", apertura scura dello spot: si parte dal suono, non dalla "
@@ -324,7 +328,7 @@ class VideoEngine:
                     # La fine del clip precedente resta dentro il nero: con un nero di soli
                     # 3 fotogrammi il cuscinetto arriverebbe sul primo fotogramma dello spot dopo
                     fine_prec = min(tg["a"] + v_cusc_f, tg["b"] - 0.02)
-                    punti.append((fine_prec, max(0.0, tg["b"] - v_cusc_i)))
+                    punti.append((fine_prec, max(0.0, tg["b"] - v_cusc_i), 0.0))
                 else:
                     da_verificare += 1
                     if "bumper" in tg:
@@ -334,11 +338,14 @@ class VideoEngine:
                     else:
                         motivo = ("stacco netto (cambio di scena)" if tg["tipo"] == "scena"
                                   else "nessuno stacco riconoscibile, punto stimato")
+                    coda = tg.get("coda", 0.0)
+                    suono = (f" (il suono del pezzo prima continua per {coda:.2f}s: l'audio si "
+                             f"taglia lì)" if coda else "")
                     await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero, {motivo} a "
-                                   f"{tg['a']:.2f}s — da verificare", "orange")
+                                   f"{tg['a']:.2f}s{suono} — da verificare", "orange")
                     # Senza nero il fotogramma sul punto di stacco è già del clip successivo:
                     # mezzo fotogramma prima basta a escluderlo dal clip precedente.
-                    punti.append((tg["a"] - 0.02, tg["a"]))
+                    punti.append((tg["a"] - 0.02, tg["a"], coda))
 
             # ── 4. CALCOLA TUTTI I JOB DI TAGLIO ─────────────────────────
             # Prima costruiamo la lista completa dei job (tempi + nomi + path)
@@ -365,6 +372,10 @@ class VideoEngine:
                 name_c = name_c.rstrip(". ") or "Sconosciuto"
 
                 r_s = punti[i - 1][1]
+                # Coda di suono sugli stacchi netti: l'audio di questo clip parte dopo la coda
+                # del pezzo prima e finisce dopo la propria (0.02 = il mezzo fotogramma tolto)
+                ritardo_audio = punti[i - 1][2]
+                coda_audio = punti[i][2] + 0.02 if i < len(spot_list) and punti[i][2] else 0.0
                 if i < len(spot_list):
                     r_e = punti[i][0]
                 else:
@@ -387,6 +398,7 @@ class VideoEngine:
                 cut_jobs.append({
                     "idx_spot": i,
                     "r_s": r_s, "r_e": r_e,
+                    "ritardo_audio": ritardo_audio, "coda_audio": coda_audio,
                     "out_f": out_f, "k": k, "l_col": l_col,
                 })
 
@@ -453,7 +465,8 @@ class VideoEngine:
                     ok = await self._cut_segment(
                         sorgente, job["r_s"], job["r_e"],
                         v_crf, job["out_f"], state, c_flags,
-                        proc_list=active_procs
+                        proc_list=active_procs,
+                        ritardo_audio=job["ritardo_audio"], coda_audio=job["coda_audio"]
                     )
                     elapsed = round(time.time() - t_start, 1)
                     if ok:
@@ -845,6 +858,7 @@ class VideoEngine:
         tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, toll, colorati)
         await self._applica_suono(tagli, video, c_flags)
         self._correggi_bumper(spot_list, tagli, scene)
+        await self._applica_code(tagli, video, c_flags)
         return timestamps, spostamento, tagli, scarto, n_campioni
 
     @staticmethod
@@ -1145,11 +1159,45 @@ class VideoEngine:
                 if inizio is not None and inizio <= tg["b"] - ANTICIPO_SUONO:
                     tg["b_suono"], tg["b"] = tg["b"], inizio
 
-    async def _livelli_audio(self, video, a, b, c_flags) -> list:
-        """Livello dell'audio (dB RMS) ogni 0.1s tra a e b: [(tempo, dB)]; [] se non si legge."""
+    async def _applica_code(self, tagli, video, c_flags):
+        """
+        Stacchi netti senza nero: nelle registrazioni dell'83-84 il suono del pezzo prima dura
+        spesso qualche fotogramma più dell'immagine (l'ultima nota del jingle del bumper finiva
+        all'inizio dello spot dopo). Se dopo lo stacco il suono continua e poi tace, l'audio
+        si taglia lì ("coda" = secondi dopo lo stacco); l'immagine resta tagliata sullo stacco.
+        """
+        for tg in tagli:
+            if tg and tg["tipo"] == "scena":
+                livelli = await self._livelli_audio(video, max(0.0, tg["a"] - 0.12),
+                                                    tg["a"] + CODA_MAX + 0.12, c_flags, passo=0.02)
+                coda = self._coda_suono(livelli, tg["a"])
+                if coda:
+                    tg["coda"] = coda
+
+    @staticmethod
+    def _coda_suono(livelli, a) -> float | None:
+        """
+        Secondi di suono dopo lo stacco a, prima di un silenzio netto (0.1s almeno CODA_CALO dB
+        sotto il suono di prima dello stacco). None se prima dello stacco c'è già silenzio, se
+        il suono tace subito o se non tace entro CODA_MAX (è già il sonoro del pezzo dopo).
+        """
+        prima = [db for t, db in livelli if a - 0.12 <= t < a]
+        dopo = [(t - a, db) for t, db in livelli if t >= a]
+        if not prima or max(prima) < -40:
+            return None
+        soglia = min(DB_SUONO, max(prima) - CODA_CALO)
+        for i, (t, _) in enumerate(dopo):
+            if t > CODA_MAX or i + 5 > len(dopo):
+                return None
+            if all(db < soglia for _, db in dopo[i:i + 5]):
+                return round(t, 2) if t >= CODA_MIN else None
+        return None
+
+    async def _livelli_audio(self, video, a, b, c_flags, passo=0.1) -> list:
+        """Livello dell'audio (dB RMS) ogni passo secondi tra a e b: [(tempo, dB)]; [] se non si legge."""
         cmd = [get_tool_path('ffmpeg'), '-v', 'error', '-ss', f"{a:.2f}", '-i', video,
                '-t', f"{b - a:.2f}", '-vn', '-af',
-               "aresample=44100,asetnsamples=n=4410,astats=metadata=1:reset=1,"
+               f"aresample=44100,asetnsamples=n={round(44100 * passo)},astats=metadata=1:reset=1,"
                "ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-", '-f', 'null', '-']
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -1196,11 +1244,15 @@ class VideoEngine:
                 return
 
     async def _cut_segment(self, src, r_s, r_e, crf, out_f, state, c_flags,
-                           proc_list: list | None = None) -> bool:
+                           proc_list: list | None = None,
+                           ritardo_audio: float = 0.0, coda_audio: float = 0.0) -> bool:
         """
         Taglia un singolo segmento dalla sorgente (originale o master) e lo salva in out_f.
         proc_list: lista condivisa dove registrare il processo attivo,
                    usata dai tagli paralleli per killarli tutti su Stop.
+        ritardo_audio: l'audio parte tanti secondi dopo l'immagine (all'inizio c'è ancora
+                   la coda sonora del pezzo prima, che resta a lui).
+        coda_audio: l'audio prosegue tanti secondi oltre la fine, con l'ultimo fotogramma fermo.
         Ritorna True se riuscito.
         """
         # Seek ibrido: salto veloce fino a 1s prima, poi seek preciso sull'ultimo secondo.
@@ -1209,14 +1261,24 @@ class VideoEngine:
         # Stesso risultato del solo seek dopo -i (anche nei pacchetti audio copiati),
         # ma senza decodificare il video dall'inizio.
         pre = min(1.0, r_s)
-        cmd = [
-            get_tool_path('ffmpeg'), '-y',
-            '-ss', f"{r_s - pre:.2f}", '-i', src,
-            '-ss', f"{pre:.2f}",
-            '-t',  f"{max(0.5, r_e - r_s):.2f}",
-            '-c:v', 'libx264', '-crf', str(crf), '-g', '50',
-            '-c:a', 'copy', out_f
-        ]
+        durata = max(0.5, r_e - r_s)
+        cmd = [get_tool_path('ffmpeg'), '-y', '-ss', f"{r_s - pre:.2f}", '-i', src]
+        if ritardo_audio:
+            # L'audio si legge da un secondo ingresso che parte più avanti; i pacchetti copiati
+            # si rimettono poi al loro posto nel tempo (setts), così resta in sincrono
+            # (-t sull'ingresso: quello in uscita conta i tempi prima dello spostamento e
+            # lascerebbe passare l'inizio del pezzo dopo)
+            cmd += ['-ss', f"{r_s - pre + ritardo_audio:.2f}",
+                    '-t', f"{pre + durata + coda_audio - ritardo_audio:.2f}", '-i', src,
+                    '-map', '0:v:0', '-map', '1:a:0?']
+        cmd += ['-ss', f"{pre:.2f}", '-t', f"{durata + coda_audio:.2f}"]
+        if coda_audio:
+            cmd += ['-vf', f"trim=end={pre + durata:.2f},"
+                           f"tpad=stop_mode=clone:stop_duration={coda_audio:.2f}"]
+        cmd += ['-c:v', 'libx264', '-crf', str(crf), '-g', '50', '-c:a', 'copy']
+        if ritardo_audio:
+            cmd += ['-bsf:a', f"setts=pts=PTS+{ritardo_audio:.2f}/TB:dts=DTS+{ritardo_audio:.2f}/TB"]
+        cmd.append(out_f)
         try:
             p_cut = await asyncio.create_subprocess_exec(*cmd, creationflags=c_flags)
             # Registra il processo nella lista condivisa del batch (thread-safe per asyncio)
