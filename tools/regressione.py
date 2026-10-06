@@ -154,10 +154,19 @@ async def tagli_di(classe, dati):
 
     spots = eng._read_spot_list(_txt(dati["video"])) or []
     neri = {float(k): v for k, v in dati["neri"].items()}
-    tagli = eng._choose_cuts([s["t"] for s in spots], neri, dati["scene"], TOLL, dati["colorati"])[0]
-    if hasattr(eng, "_applica_suono"):
+    if "durata" not in dati:
+        dati["durata"] = get_video_duration(dati["video"])
+        dati["_nuovo_audio"] = True   # fa salvare il file di analisi
+    if hasattr(eng, "_scegli_tagli"):
+        # Dalla 1.3.8 tutta la scelta dei tagli sta in una funzione sola del motore
         eng._livelli_audio = livelli_salvati
-        await eng._applica_suono(tagli, dati["video"], FLAGS)
+        tagli = (await eng._scegli_tagli(spots, neri, dati["scene"], dati["colorati"], dati["video"],
+                                         dati["durata"], TOLL, FLAGS))[2]
+    else:
+        tagli = eng._choose_cuts([s["t"] for s in spots], neri, dati["scene"], TOLL, dati["colorati"])[0]
+        if hasattr(eng, "_applica_suono"):
+            eng._livelli_audio = livelli_salvati
+            await eng._applica_suono(tagli, dati["video"], FLAGS)
     return [s["n"] for s in spots], [[t["tipo"], round(t["a"], 2), round(t["b"], 2)] if t else None
                                     for t in tagli]
 

@@ -278,9 +278,17 @@ class VideoEngine:
             # ── 3b. SCEGLI IL NERO DI OGNI STACCO ─────────────────────────
             # Lo stesso nero chiude lo spot precedente (inizio nero + cuscinetto fine)
             # e apre quello successivo (fine nero - cuscinetto inizio).
-            timestamps = [s["t"] for s in spot_list]
-            tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, v_toll, colorati)
-            await self._applica_suono(tagli, video_path_completo, c_flags)
+            timestamps, spostamento, tagli, scarto, n_campioni = await self._scegli_tagli(
+                spot_list, neri, scene, colorati, video_path_completo, duration, v_toll, c_flags)
+            mmss_ = lambda t: f"{int(t) // 60:02d}:{int(t) % 60:02d}"
+            if spostamento:
+                await self.log(f"⚠️ Gli orari del txt arrivano a {mmss_(timestamps[-1] + spostamento)} ma il "
+                               f"video dura {mmss_(duration)}: sono quelli di una registrazione più lunga. "
+                               f"Li uso spostati indietro di {mmss_(spostamento)} (così combaciano con i "
+                               f"neri) — da verificare.", "orange")
+            elif timestamps and duration and timestamps[-1] >= duration:
+                await self.log(f"⚠️ Gli orari del txt arrivano a {mmss_(timestamps[-1])} ma il video dura "
+                               f"{mmss_(duration)}: controlla il txt.", "red")
             if n_campioni >= 3:
                 await self.log(f"Timestamp del txt: il nero cade in media {scarto:+.2f}s dopo "
                                f"(misurato su {n_campioni} stacchi).", "grey")
@@ -304,8 +312,13 @@ class VideoEngine:
                     punti.append((fine_prec, max(0.0, tg["b"] - v_cusc_i)))
                 else:
                     da_verificare += 1
-                    motivo = ("stacco netto (cambio di scena)" if tg["tipo"] == "scena"
-                              else "nessuno stacco riconoscibile, punto stimato")
+                    if "bumper" in tg:
+                        # punto spostato perché il bumper durava diversamente dagli altri uguali
+                        motivo = (f"{'stacco netto' if tg['tipo'] == 'scena' else 'punto calcolato'} "
+                                  f"dalla durata del bumper ({tg['bumper']:.1f}s come gli altri)")
+                    else:
+                        motivo = ("stacco netto (cambio di scena)" if tg["tipo"] == "scena"
+                                  else "nessuno stacco riconoscibile, punto stimato")
                     await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero, {motivo} a "
                                    f"{tg['a']:.2f}s — da verificare", "orange")
                     # Senza nero il fotogramma sul punto di stacco è già del clip successivo:
@@ -802,6 +815,136 @@ class VideoEngine:
             self._current_proc = None
             await self.log(f"⚠️ Errore ricerca neri: {e}", "red")
             return {th: [] for th in levels}, [], None
+
+    async def _scegli_tagli(self, spot_list, neri, scene, colorati, video, durata, toll, c_flags) -> tuple:
+        """
+        Tutta la scelta dei punti di taglio di un video, dai risultati dell'analisi: orari del
+        txt riallineati se serve, nero (o stacco netto) di ogni stacco, neri lunghi col suono.
+        La usa anche la prova anti-regressione (tools/regressione.py): ogni passo nuovo va qui.
+        Ritorna (timestamps usati, spostamento degli orari, tagli, scarto, n_campioni).
+        """
+        timestamps = [s["t"] for s in spot_list]
+        timestamps, spostamento = self._allinea_timestamps(timestamps, neri, durata, toll)
+        tagli, scarto, n_campioni = self._choose_cuts(timestamps, neri, scene, toll, colorati)
+        await self._applica_suono(tagli, video, c_flags)
+        self._correggi_bumper(spot_list, tagli, scene)
+        return timestamps, spostamento, tagli, scarto, n_campioni
+
+    @staticmethod
+    def _correggi_bumper(spot_list, tagli, scene):
+        """
+        I bumper di un video sono sempre gli stessi, ripetuti: se lo stesso nome compare almeno
+        3 volte e quasi sempre dura uguale, quella è la sua durata. Un bumper che esce molto
+        più lungo o più corto ha un estremo sbagliato (di solito uno stacco debole non visto,
+        bumper scuro verso spot scuro): si sposta l'estremo meno sicuro alla distanza giusta
+        dall'altro, agganciandolo allo stacco più vicino a quel punto, anche se debole.
+        Un estremo su un nero non si tocca mai. Il taglio spostato ha "bumper": durata usata.
+        """
+        TOLL_DURATA, AGGANCIO, STACCO_DEBOLE, MIN_VOLTE = 0.5, 0.3, 2.0, 3
+        n = len(tagli)
+
+        def forza(t):
+            if t["tipo"] == "nero":
+                return float("inf")
+            if t["tipo"] == "stima":
+                return 0.0
+            return max((p for x, p in scene if abs(x - t["a"]) < 0.021), default=0.0)
+
+        gruppi = {}
+        for k, s in enumerate(spot_list):
+            nome = s["n"].strip().lower()
+            if nome.startswith("bumper") and k + 1 < n and tagli[k] and tagli[k + 1]:
+                gruppi.setdefault(nome, []).append(k)
+
+        for volte in gruppi.values():
+            if len(volte) < MIN_VOLTE:
+                continue
+            durate = {k: tagli[k + 1]["a"] - tagli[k]["b"] for k in volte}
+            buone = [d for k, d in durate.items()
+                     if tagli[k]["tipo"] != "stima" and tagli[k + 1]["tipo"] != "stima"]
+            if len(buone) < MIN_VOLTE:
+                continue
+            tipica = statistics.median(buone)
+            if sum(1 for d in buone if abs(d - tipica) <= 0.3) * 2 < len(buone):
+                continue   # durate troppo diverse tra loro: non c'è una durata da imparare
+            for k in volte:
+                if abs(durate[k] - tipica) <= TOLL_DURATA:
+                    continue
+                inizio, fine = tagli[k], tagli[k + 1]
+                # Il txt stesso dice se questo bumper è più lungo degli altri (es. doppia sigla,
+                # "00:31" e poi "00:36"): gli orari sono al secondo, quindi fino a 1.5s di
+                # differenza non dicono nulla. Se però la riga ha l'orario doppio (errore del
+                # txt) e l'inizio è solo stimato, il txt lì non conta.
+                passo_txt = spot_list[k + 1]["t"] - spot_list[k]["t"]
+                txt_sbagliato = (k > 0 and spot_list[k]["t"] <= spot_list[k - 1]["t"]
+                                 and inizio["tipo"] == "stima")
+                if abs(passo_txt - tipica) > 1.5 and not txt_sbagliato:
+                    continue
+
+                def prova(sposta_fine):
+                    """(agganciato a uno stacco vero, punto, taglio da spostare), None se non ci sta."""
+                    if sposta_fine:   # fine del bumper = inizio del pezzo dopo
+                        quale, punto, lo = k + 1, inizio["b"] + tipica, inizio["b"]
+                        hi = min((t["a"] for t in tagli[k + 2:] if t), default=float("inf"))
+                    else:             # inizio del bumper = fine del pezzo prima
+                        quale, punto, hi = k, fine["a"] - tipica, fine["a"]
+                        lo = max((t["b"] for t in tagli[:k] if t), default=0.0)
+                    if not lo < punto < hi:
+                        return None
+                    vicini = [(p, x) for x, p in scene
+                              if abs(x - punto) <= AGGANCIO and p >= STACCO_DEBOLE and lo < x < hi]
+                    return (True, max(vicini)[1], quale) if vicini else (False, punto, quale)
+
+                tipi = (inizio["tipo"], fine["tipo"])
+                scelta = None
+                if tipi == ("nero", "nero") or tipi == ("stima", "stima"):
+                    continue   # tra due neri è davvero diverso; tra due stime non c'è appiglio
+                if tipi[0] == "nero":
+                    # Il bumper parte esattamente dove finisce il nero: la fine si può calcolare
+                    scelta = prova(True)
+                elif tipi[1] == "nero":
+                    # Prima di un nero può esserci una dissolvenza che allunga il bumper:
+                    # l'inizio si sposta solo su uno stacco vero, o se era soltanto stimato
+                    r = prova(False)
+                    if r and (r[0] or tipi[0] == "stima"):
+                        scelta = r
+                elif "stima" in tipi:
+                    scelta = prova(tipi[1] == "stima")   # si sposta l'estremo stimato
+                else:
+                    # Due stacchi veri: uno si sposta solo su un altro stacco vero, e resta
+                    # fermo il più forte dei due
+                    validi = [(forza(fermo), r) for fermo, r in ((inizio, prova(True)), (fine, prova(False)))
+                              if r and r[0]]
+                    if validi:
+                        scelta = max(validi, key=lambda v: v[0])[1]
+                if not scelta:
+                    continue
+                agganciato, punto, quale = scelta
+                tagli[quale] = {"tipo": "scena" if agganciato else "stima", "a": punto, "b": punto,
+                                "bumper": tipica}
+
+    @staticmethod
+    def _allinea_timestamps(timestamps: list, neri: dict, durata: float, toll: float) -> tuple:
+        """
+        Alcune descrizioni hanno gli orari di una registrazione più lunga ("03:57 ... 07:43"
+        per un video di 4 minuti e mezzo). Se gli orari escono dal video ma, facendoli partire
+        da zero, ci stanno e combaciano con i neri (almeno metà degli stacchi, e più di prima),
+        si usano spostati. Ritorna (timestamps, spostamento applicato in secondi).
+        """
+        if len(timestamps) < 2 or not durata or timestamps[0] <= 0 or timestamps[-1] < durata:
+            return timestamps, 0.0
+        t0 = timestamps[0]
+        if timestamps[-1] - t0 >= durata or not neri:
+            return timestamps, 0.0
+        base = neri[min(neri)]
+
+        def vicini(ts):
+            return sum(1 for t in ts[1:] if any(a - toll <= t <= b + toll for a, b in base))
+
+        spostati = [t - t0 for t in timestamps]
+        if vicini(spostati) >= max(1, (len(timestamps) - 1) // 2) and vicini(spostati) > vicini(timestamps):
+            return spostati, t0
+        return timestamps, 0.0
 
     @staticmethod
     def _choose_cuts(timestamps: list, neri: dict, scene: list, toll: float,
