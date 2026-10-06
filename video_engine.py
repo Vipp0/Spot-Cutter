@@ -26,7 +26,7 @@ def get_ytdlp_path() -> str:
 from utils import (
     get_seconds, get_unique_filename, get_video_duration,
     safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
-    get_tool_path, RIGA_TXT, righe_txt_ignorate, righe_txt_fuori_ordine
+    get_tool_path, RIGA_TXT, righe_txt_ignorate, righe_txt_fuori_ordine, motivo_non_pronto
 )
 
 # Saturazione media (0-~180) sopra la quale un fotogramma scuro non è nero ma contenuto:
@@ -143,14 +143,31 @@ class VideoEngine:
             if not state["running"]:
                 break
 
-            if not txt:
-                continue
-
             if vid in self._leggi_json(storico_path):
                 await self.log(f"⏭️ {vid}: già elaborato, saltato "
                                f"(per rifarlo toglilo dallo storico).", "grey")
                 if status_cb:
                     await status_cb(idx, "✅ Già elaborato", "#4CAF50")
+                continue
+
+            # Un video non pronto (senza txt o con la data da confermare) non blocca gli altri:
+            # si salta e resta in coda. Si decide adesso, quando tocca a lui, così vale ciò che
+            # è stato sistemato mentre si tagliavano i precedenti; se la sua data è ancora in
+            # verifica online la si aspetta qualche secondo.
+            in_verifica = state.get("date_in_verifica", ())
+            for _ in range(60):
+                if vid not in in_verifica or not state["running"]:
+                    break
+                await asyncio.sleep(0.5)
+            vid, txt, m_year = next((q for q in state.get("queue_files", []) if q[0] == vid),
+                                    (vid, txt, m_year))
+            motivo = motivo_non_pronto(vid, txt, m_year, state["current_dir"])
+            if motivo:
+                await self.log(f"⏭️ {vid}: saltato, {motivo}. Resta in coda.", "orange")
+                if status_cb:
+                    await status_cb(idx, f"⏭️ Saltato: {motivo}", "orange")
+                state.setdefault("saltati", []).append((vid, motivo))
+                session_log.append(f"  ⏭️ {vid} — saltato, {motivo}")
                 continue
 
             # --- LOGICA DI INIZIO VIDEO ---
@@ -559,7 +576,9 @@ class VideoEngine:
         # Report sessione nel log
         if session_log:
             await self.log("─" * 40, "grey")
-            await self.log(f"📋 VIDEO ELABORATI IN QUESTA SESSIONE ({completati}):", "cyan")
+            saltati = len(state.get("saltati", []))
+            await self.log(f"📋 VIDEO ELABORATI IN QUESTA SESSIONE ({completati})"
+                           + (f", SALTATI ({saltati}, restano in coda)" if saltati else "") + ":", "cyan")
             for entry in session_log:
                 await self.log(entry, "white")
             await self.log("─" * 40, "grey")

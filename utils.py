@@ -185,6 +185,32 @@ def extract_date_info(filename):
     
     return best["date_str"], str(best["year"]), color
 
+def motivo_non_pronto(vid, txt, manual_date, cartella) -> str | None:
+    """
+    Perché un video in coda non si può ancora elaborare (None se è pronto): serve un txt non
+    vuoto e una data certa (inserita a mano, confermata online o verde dal nome del file).
+    La usano il pulsante Avvia e il motore, che la richiede quando tocca a quel video.
+    """
+    if not txt:
+        return "manca il txt"
+    try:
+        if os.path.getsize(os.path.join(cartella, txt)) == 0:
+            return "il txt è vuoto"
+    except OSError:
+        return "manca il txt"
+    manuale = manual_date.strip() if manual_date else ""
+    if manuale in ("", "--"):
+        data, _, colore = extract_date_info(vid)
+        if not data:
+            return "manca la data"
+    else:
+        data, colore = manuale, "green"
+    try:
+        datetime.strptime(data, "%d-%m-%Y")
+    except ValueError:
+        return "data non valida"
+    return None if colore == "green" else "data da confermare"
+
 def get_unique_filename(directory, name, ext=".mkv", reserved=None):
     """reserved: set di percorsi (normcase) già assegnati ma non ancora scritti su disco."""
     if not ext.startswith("."): ext = "." + ext

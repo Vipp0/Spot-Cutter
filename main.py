@@ -53,7 +53,7 @@ for exe in ("ffmpeg.exe", "ffprobe.exe"):
 from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
     get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
-    get_seconds, get_tool_path, parse_settings, load_settings, save_settings,
+    get_seconds, get_tool_path, motivo_non_pronto, parse_settings, load_settings, save_settings,
 )
 from video_engine import VideoEngine
 
@@ -1784,7 +1784,7 @@ class SpotCutterApp(QMainWindow):
         # AVVIA / STOP
         self._btn_run = self._make_btn("▶  AVVIA", "btn_run", h=55)
         self._btn_run.setEnabled(False)
-        self._btn_run.clicked.connect(self._on_run)
+        self._btn_run.clicked.connect(lambda: self._on_run())
         layout.addWidget(self._btn_run)
 
         self._btn_stop = self._make_btn("⏹  STOP", "btn_stop", h=45)
@@ -2106,30 +2106,33 @@ class SpotCutterApp(QMainWindow):
         # I video appena entrati con una data da confermare si controllano online
         QTimer.singleShot(0, self._verifica_date_online)
 
+    def _non_pronti(self) -> list:
+        """[(video, motivo)] dei video in coda che non si possono ancora elaborare."""
+        cartella = self.state.get("current_dir", "")
+        return [(v, m) for v, t, d in self.state.get("queue_files", [])
+                if (m := motivo_non_pronto(v, t, d, cartella))]
+
     def _sync_buttons(self):
-        """Disabilita AVVIA se ci sono errori (TXT mancanti o date invalide)."""
+        """AVVIA è attivo se almeno un video è pronto: quelli non pronti si saltano."""
         queue = self.state.get("queue_files", [])
         running = self.state.get("running", False)
-        
-        can_start = bool(queue) and not running
-        
-        if can_start:
-            for vid, txt, manual_date in queue:
-                ext_date, _, auto_color = extract_date_info(vid)
-                date_to_check = manual_date if (manual_date and manual_date.strip() not in ("", "--")) else ext_date
-                
-                # Controllo validità reale
-                is_valid = False
-                try:
-                    datetime.strptime(date_to_check, "%d-%m-%Y")
-                    is_valid = True
-                except:
-                    is_valid = False
 
-                # Se manca il TXT o la data è invalida o la data è arancione (incerta), NON partire
-                if not txt or not is_valid or (not manual_date and auto_color != "green"):
-                    can_start = False
-                    break
+        non_pronti = self._non_pronti()
+        pronti = len(queue) - len(non_pronti)
+        can_start = pronti > 0 and not running
+        if not running:
+            if non_pronti and pronti:
+                self._btn_run.setText(f"▶  AVVIA ({pronti} di {len(queue)})")
+            else:
+                self._btn_run.setText("▶  AVVIA")
+            if non_pronti:
+                elenco = "\n".join(f"  · {v[:60]} — {m}" for v, m in non_pronti[:8])
+                if len(non_pronti) > 8:
+                    elenco += f"\n  · ... e altri {len(non_pronti) - 8}"
+                self._btn_run.setToolTip(("Verranno saltati e resteranno in coda:\n" if pronti
+                                          else "Nessun video pronto:\n") + elenco)
+            else:
+                self._btn_run.setToolTip("")
 
         if running:
             self._btn_run.hide()
@@ -2263,10 +2266,14 @@ class SpotCutterApp(QMainWindow):
         self.render_queue()
 
         # --- Dialogo Finale con Riepilogo ---
-        if elapsed > 1:
-            QTimer.singleShot(50, lambda: self._show_finished_dialog(successo, m, s_, riepilogo))
+        saltati = list(self.state.get("saltati", []))
+        if saltati:
+            self._on_log("⏭️ 1 video saltato perché non pronto: resta in coda." if len(saltati) == 1 else
+                         f"⏭️ {len(saltati)} video saltati perché non pronti: restano in coda.", "orange")
+        if elapsed > 1 or saltati:
+            QTimer.singleShot(50, lambda: self._show_finished_dialog(successo, m, s_, riepilogo, saltati))
 
-    def _show_finished_dialog(self, successo: bool, m: int, s_: int, riepilogo: str):
+    def _show_finished_dialog(self, successo: bool, m: int, s_: int, riepilogo: str, saltati=()):
         stato = "Completato! ✅" if successo else "Interrotto 🛑"
         
         msg_box = QMessageBox(self)
@@ -2276,6 +2283,11 @@ class SpotCutterApp(QMainWindow):
         testo_box = f"Lavoro {stato}\nTempo totale: {m}m {s_}s"
         if riepilogo:
             testo_box += f"\n\nCategorie elaborate:\n{riepilogo}"
+        if saltati:
+            elenco = "\n".join(f"  · {v[:60]} — {mot}" for v, mot in saltati[:8])
+            if len(saltati) > 8:
+                elenco += f"\n  · ... e altri {len(saltati) - 8}"
+            testo_box += (f"\n\nSaltati perché non pronti ({len(saltati)}), restano in coda:\n{elenco}")
         
         msg_box.setText(testo_box)
         
@@ -2382,7 +2394,7 @@ class SpotCutterApp(QMainWindow):
 
         # Avvio automatico dopo import YouTube se abilitato nelle impostazioni
         if self._s.get("auto_start_after_yt", False) and added_count > 0:
-            self._on_run()
+            self._on_run(conferma=False)
 
     def _aggiungi_scaricati(self, result: list) -> int:
         """Mette in coda i video scaricati (vid, txt); ritorna quanti sono stati aggiunti."""
@@ -2459,7 +2471,8 @@ class SpotCutterApp(QMainWindow):
         self._on_log("Coda svuotata.", "orange")
         self.render_queue()
 
-    def _on_run(self):
+    def _on_run(self, conferma: bool = True):
+        """conferma=False per l'avvio automatico dopo un download: nessuna domanda."""
         if self.state["running"]:
             return
 
@@ -2467,6 +2480,34 @@ class SpotCutterApp(QMainWindow):
         if not self.state.get("queue_files"):
             self._on_log("⚠️ Coda vuota. Nulla da elaborare.", "orange")
             return
+
+        # Video non pronti: non bloccano gli altri, ma prima di partire lo si dice
+        non_pronti = self._non_pronti()
+        pronti = len(self.state["queue_files"]) - len(non_pronti)
+        if pronti == 0:
+            self._on_log("⚠️ Nessun video pronto: mancano txt o date.", "orange")
+            return
+        if non_pronti and conferma:
+            uno = len(non_pronti) == 1
+            elenco = "\n".join(f"  · {v[:70]} — {m}" for v, m in non_pronti[:8])
+            if len(non_pronti) > 8:
+                elenco += f"\n  · ... e altri {len(non_pronti) - 8}"
+            box = QMessageBox(self)
+            box.setWindowTitle("Video non pronti")
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setText(f"{'1 video non è pronto e verrà saltato' if uno else f'{len(non_pronti)} video non sono pronti e verranno saltati'}:"
+                        f"\n\n{elenco}\n\n"
+                        f"{'Resta' if uno else 'Restano'} in coda: se nel frattempo "
+                        f"{'lo sistemi' if uno else 'li sistemi'}, "
+                        f"{'viene elaborato' if uno else 'vengono elaborati'} quando arriva il "
+                        f"{'suo' if uno else 'loro'} turno.\n\n"
+                        f"Avviare {'il video pronto' if pronti == 1 else f'i {pronti} video pronti'}?")
+            btn_si = box.addButton("Avvia", QMessageBox.ButtonRole.YesRole)
+            box.addButton("Annulla", QMessageBox.ButtonRole.NoRole)
+            box.setDefaultButton(btn_si)
+            box.exec()
+            if box.clickedButton() != btn_si:
+                return
 
         # 2. FIX MEMORIA: Resettiamo il dizionario delle label di stato.
         # Questo evita che il Worker cerchi di aggiornare graficamente dei widget 
@@ -2503,6 +2544,9 @@ class SpotCutterApp(QMainWindow):
         self.state["stats_counts"] = {k: 0 for k in self.state["stats_counts"]}
         self.state["parallel_cuts"] = int(self._s.get("parallel_cuts", 0))
         self.state["use_master"] = bool(self._s.get("use_master", False))
+        self.state["saltati"] = []
+        # Il motore aspetta qualche secondo i video la cui data è ancora in verifica online
+        self.state["date_in_verifica"] = self._date_in_verifica
         self._sync_buttons()
 
         # Crea worker e thread
