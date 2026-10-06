@@ -272,7 +272,7 @@ class VideoCard(QFrame):
                  status_text: str, status_color: str,
                  is_first: bool, is_last: bool,
                  is_running: bool, current_dir: str = "", parent=None,
-                 date_tooltip: str | None = None):
+                 date_tooltip: str | None = None, txt_in_ricerca: bool = False):
         super().__init__(parent)
         self.idx = idx
         self.vid = vid
@@ -358,7 +358,7 @@ class VideoCard(QFrame):
         layout.addLayout(btn_layout)
 
         # Impostazione iniziale dei testi e degli stili
-        self.txt_part.setText(f"📄 {'TXT OK' if has_txt else 'NO TXT'}")
+        self.txt_part.setText(f"📄 {'TXT OK' if has_txt else 'TXT ⏳' if txt_in_ricerca else 'NO TXT'}")
         # Tooltip anteprima TXT (prima dei colori: trova anche le righe ignorate)
         self._txt_ignorate = []
         self._txt_fuori_ordine = []
@@ -373,6 +373,10 @@ class VideoCard(QFrame):
 
     def _update_txt_tooltip(self):
         """Mostra le prime 8 righe del TXT come tooltip sulla pillola sinistra."""
+        if "⏳" in self.txt_part.text():
+            self.txt_part.setToolTip("⏳ Ricerca del txt su YouTube in corso…\n"
+                                     "Se il video si trova, il txt arriva da solo dalla descrizione.")
+            return
         if "NO TXT" in self.txt_part.text():
             self.txt_part.setToolTip("Nessun file TXT associato.\nClicca per crearne uno.")
             return
@@ -433,6 +437,8 @@ class VideoCard(QFrame):
         # 1. Sinistra (TXT): Verde se OK, Arancio se ha righe ignorate, Rosso se manca
         da_controllare = self._txt_ignorate or self._txt_fuori_ordine
         txt_bg = (COLOR_ARANCIO if da_controllare else COLOR_VERDE) if has_txt else COLOR_ROSSO
+        if "⏳" in self.txt_part.text():
+            txt_bg = "#78909C"   # ricerca del txt su YouTube in corso
         
         # 2. Destra (DATA): Basata sulle icone
         if "⏳" in text:
@@ -1277,6 +1283,7 @@ class SpotCutterApp(QMainWindow):
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
         self._date_verificate = set()   # video già mandati alla verifica online della data
+        self._txt_in_ricerca = set()    # ricerca automatica del txt in corso: pillola con la clessidra
         self._date_in_verifica = set()  # verifica in corso: pillola grigio-azzurra con la clessidra
         self._date_esiti = {}           # video -> perché la data non è stata confermata online
         self._date_youtube = {}         # video -> data presa dal titolo YouTube
@@ -2089,7 +2096,8 @@ class SpotCutterApp(QMainWindow):
                 is_first=(i == 0), is_last=(i == total - 1),
                 is_running=running,
                 current_dir=self.state.get("current_dir", ""),
-                date_tooltip=None if is_done else tip_data)
+                date_tooltip=None if is_done else tip_data,
+                txt_in_ricerca=vid in self._txt_in_ricerca)
 
             card.sig_move_up.connect(self._move_item_up)
             card.sig_move_down.connect(self._move_item_down)
@@ -2103,7 +2111,7 @@ class SpotCutterApp(QMainWindow):
 
         self._sync_buttons()
         self._update_duration_label()
-        # I video appena entrati con una data da confermare si controllano online
+        # I video appena entrati senza txt o con una data da confermare si cercano online
         QTimer.singleShot(0, self._verifica_date_online)
 
     def _non_pronti(self) -> list:
@@ -2547,6 +2555,7 @@ class SpotCutterApp(QMainWindow):
         self.state["saltati"] = []
         # Il motore aspetta qualche secondo i video la cui data è ancora in verifica online
         self.state["date_in_verifica"] = self._date_in_verifica
+        self.state["txt_in_ricerca"] = self._txt_in_ricerca
         self._sync_buttons()
 
         # Crea worker e thread
@@ -2734,18 +2743,48 @@ class SpotCutterApp(QMainWindow):
         l'anno, ...) si confrontano col titolo YouTube. Se il video si trova, vale la data
         del titolo e la pillola diventa verde; se no resta arancione, da confermare a mano.
         Ogni video si controlla una volta per sessione; le date inserite a mano non si toccano.
+        Con la stessa ricerca i video entrati in coda senza txt ricevono anche il txt, dalla
+        descrizione del video.
         """
         if not strumento_presente("yt-dlp"):
             return   # si rifà appena yt-dlp viene scaricato
-        da_fare = []
+        da_fare, senza_txt = [], []
         for vid, _, manuale in self.state.get("queue_files", []):
-            if vid in self._date_verificate or (manuale and manuale.strip() not in ("", "--")):
+            if vid in self._date_verificate:
                 continue
-            if extract_date_info(vid)[2] == "green":
+            data_incerta = (not (manuale and manuale.strip() not in ("", "--"))
+                            and extract_date_info(vid)[2] != "green")
+            manca_txt = not self._txt_presente(vid)
+            if not data_incerta and not manca_txt:
                 continue
             self._date_verificate.add(vid)
-            self._date_in_verifica.add(vid)
-            da_fare.append(vid)
+            if data_incerta:
+                self._date_in_verifica.add(vid)
+            if manca_txt:
+                self._txt_in_ricerca.add(vid)
+                senza_txt.append(vid)
+            else:
+                da_fare.append(vid)
+        if senza_txt:
+            self._on_log(f"🔎 Ricerca automatica del txt su YouTube: {len(senza_txt)} video...", "cyan")
+            cartella = self.state["current_dir"]   # i txt vanno accanto a questi video
+
+            def uno(vid, r):
+                self._txt_in_ricerca.discard(vid)
+                detto = vid in self._date_in_verifica and not r.get("data")
+                if vid in self._date_in_verifica:
+                    self._on_data_verificata(vid, r)
+                if not (detto and r["esito"] != "ok"):   # il motivo è già nel log della data
+                    self._salva_txt_trovato(vid, r, cartella)
+                self.render_queue()
+
+            def fine():   # ricerca interrotta da un errore: niente clessidre rimaste accese
+                self._txt_in_ricerca.difference_update(senza_txt)
+                self._date_in_verifica.difference_update(senza_txt)
+                self.render_queue()
+            self._avvia_ricerca_youtube(senza_txt, uno, fine)
+            if not da_fare:
+                self.render_queue()   # mostra subito la clessidra
         if da_fare:
             self._on_log(f"📅 Verifica online della data: {len(da_fare)} video...", "cyan")
             self._avvia_ricerca_youtube(da_fare, self._on_data_verificata, solo_data=True)
@@ -2777,28 +2816,33 @@ class SpotCutterApp(QMainWindow):
         st = self._cerca_txt_stato
         st["fatti"] += 1
         self._btn_cerca_txt.setText(f"🔎 Ricerca {st['fatti']}/{st['totale']}...")
+        if self._salva_txt_trovato(vid, r, st["cartella"]):
+            st["trovati"] += 1
+
+    def _salva_txt_trovato(self, vid: str, r: dict, cartella: str) -> bool:
+        """Esito di una ricerca su YouTube: scrive il txt accanto al video. True se l'ha scritto."""
         base = os.path.splitext(vid)[0]
         if r["esito"] != "ok":
             self._on_log(f"⚠️ {base}: {r['messaggio']}.", "orange")
-            if r.get("data") and self.state["current_dir"] == st["cartella"]:
+            if r.get("data") and self.state["current_dir"] == cartella:
                 self._applica_data_youtube(vid, r["data"])   # trovato, ma senza timestamp
                 self.render_queue()
-            return
+            return False
         # Mai sovrascrivere un txt comparso nel frattempo (es. scritto a mano nell'editor)
-        if self._txt_presente(vid, st["cartella"]):
+        if self._txt_presente(vid, cartella):
             self._on_log(f"ℹ️ {base}: txt già presente, non modificato.", "cyan")
-            return
-        path = os.path.join(st["cartella"], f"{base}.txt")
+            return False
+        path = os.path.join(cartella, f"{base}.txt")
         with open(path, "w", encoding="utf-8") as f:
             f.write(r["txt"])
-        st["trovati"] += 1
         self._on_log(f"✅ {base}: {r['messaggio']}.", "green")
-        if self.state["current_dir"] == st["cartella"]:
+        if self.state["current_dir"] == cartella:
             for i, item in enumerate(self.state["queue_files"]):
                 if item[0] == vid:
                     self.state["queue_files"][i] = (item[0], f"{base}.txt", item[2])
             self._applica_data_youtube(vid, r.get("data"))
             self.render_queue()
+        return True
 
     @Slot()
     def _on_cerca_txt_finita(self):

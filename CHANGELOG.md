@@ -5,6 +5,20 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.9
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Il txt si cerca da solo** — quando un video entra in coda senza txt (trascinato, caricato da una cartella o ripreso da una sessione) il programma lo cerca subito su YouTube, senza dover premere "Cerca txt mancanti". Durante la ricerca la pillola del txt è grigio-azzurra con la clessidra ("📄 TXT ⏳"); se il video si trova, il txt arriva dalla descrizione e con la stessa ricerca si conferma anche la data. Ogni video si cerca una volta per sessione, un txt già presente non viene mai sovrascritto e il pulsante resta per riprovare a mano. Se il txt arriva mentre si stanno già tagliando gli altri video, quello viene elaborato quando arriva il suo turno
+- 🇬🇧 **The txt is searched automatically** — when a video enters the queue without a txt (dragged, loaded from a folder or restored from a session) the program searches for it on YouTube straight away, without pressing "Search missing txt". During the search the txt pill is grey-blue with an hourglass ("📄 TXT ⏳"); if the video is found, the txt comes from the description and the same search also confirms the date. Each video is searched once per session, an existing txt is never overwritten and the button stays for a manual retry. If the txt arrives while the other videos are already being cut, that video is processed when its turn comes
+
+### 🔧 Miglioramenti / Improvements
+
+- 🇮🇹 **Via un avviso inutile dal log** — all'inizio di ogni video con la data scritta in modo insolito nel nome il log diceva "la data potrebbe essere ambigua, verificare", anche se la data era già stata confermata online o inserita a mano. Un video con la data non confermata oggi viene saltato, quindi l'avviso non serviva più
+- 🇬🇧 **A useless warning removed from the log** — at the start of every video with an unusual date in its name the log said "the date may be ambiguous, please check", even though the date had already been confirmed online or entered by hand. A video with an unconfirmed date is now skipped, so the warning was no longer needed
+
+---
+
 ## 🎬 Spot Cutter 1.3.8
 
 ### ✨ Nuove funzionalità / New features

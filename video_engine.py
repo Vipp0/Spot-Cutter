@@ -152,11 +152,11 @@ class VideoEngine:
 
             # Un video non pronto (senza txt o con la data da confermare) non blocca gli altri:
             # si salta e resta in coda. Si decide adesso, quando tocca a lui, così vale ciò che
-            # è stato sistemato mentre si tagliavano i precedenti; se la sua data è ancora in
-            # verifica online la si aspetta qualche secondo.
-            in_verifica = state.get("date_in_verifica", ())
+            # è stato sistemato mentre si tagliavano i precedenti; se la sua data o il suo txt
+            # sono ancora in ricerca online li si aspetta qualche secondo.
+            in_verifica, in_ricerca = state.get("date_in_verifica", ()), state.get("txt_in_ricerca", ())
             for _ in range(60):
-                if vid not in in_verifica or not state["running"]:
+                if (vid not in in_verifica and vid not in in_ricerca) or not state["running"]:
                     break
                 await asyncio.sleep(0.5)
             vid, txt, m_year = next((q for q in state.get("queue_files", []) if q[0] == vid),
@@ -212,8 +212,6 @@ class VideoEngine:
                 self._aggiorna_in_corso(in_corso_path, vid, None)
                 await self.log(f"🧹 Ripresa dopo un'interruzione: rimossi {rimossi} clip "
                                f"del tentativo precedente, il video viene rifatto da capo.", "grey")
-            if colore_data == "orange":
-                await self.log(f"⚠️ Data in {vid} potrebbe essere ambigua, verificare.", "orange")
             duration = get_video_duration(video_path_completo)
 
             # ── 1. SORGENTE: ORIGINALE (default) O MASTER ALL-INTRA ───────
