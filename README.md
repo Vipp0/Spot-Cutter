@@ -47,7 +47,7 @@
 
 - Windows 10 / 11
 - [ffmpeg](https://ffmpeg.org/download.html) — per il taglio video / for video cutting
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp/releases) — per il download da YouTube / for YouTube downloads
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp/releases) — per il download da YouTube: se manca, il programma propone di scaricarlo / for YouTube downloads: if missing, the program offers to download it
 
 ---
 
@@ -56,7 +56,7 @@
 ### Versione compilata / Compiled version (EXE)
 1. 🇮🇹 Scarica l'ultima release dalla pagina [Releases](https://github.com/Vipp0/Spot-Cutter/releases) / 🇬🇧 Download the latest release from [Releases](https://github.com/Vipp0/Spot-Cutter/releases)
 2. Estrai la cartella `SpotCutter` / Extract the `SpotCutter` folder
-3. Metti `ffmpeg.exe`, `ffprobe.exe` e `yt-dlp.exe` nella cartella `bin/` / Place `ffmpeg.exe`, `ffprobe.exe` and `yt-dlp.exe` in the `bin/` folder
+3. Metti `ffmpeg.exe` e `ffprobe.exe` nella cartella `bin/` (non serve se ffmpeg è già nel PATH di sistema); `yt-dlp.exe` lo scarica il programma al primo avvio / Place `ffmpeg.exe` and `ffprobe.exe` in the `bin/` folder (not needed if ffmpeg is already in the system PATH); `yt-dlp.exe` is downloaded by the program at first launch
 4. Avvia `SpotCutter.exe` / Launch `SpotCutter.exe`
 
 ### Da sorgente / From source

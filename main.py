@@ -44,17 +44,14 @@ if getattr(sys, 'frozen', False):
 else:
     base_path = os.path.dirname(os.path.abspath(__file__))
 
-for exe in ("ffmpeg.exe", "ffprobe.exe"):
-    if os.path.exists(os.path.join(base_path, exe)):
-        os.environ["PATH"] += os.pathsep + base_path
-        break
-
 # ── IMPORT MODULI PROGETTO ─────────────────────────────────────────────────
 from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
     get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
     get_seconds, get_tool_path, motivo_non_pronto, parse_settings, load_settings, save_settings,
+    aggiungi_strumenti_al_path, strumento_presente, scarica_ytdlp,
 )
+aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
 def resource_path(relative_path):
@@ -1247,9 +1244,11 @@ class SpotCutterApp(QMainWindow):
     _sig_yt_video        = Signal(list)
     _sig_yt_info         = Signal(str, object)
     _sig_duration        = Signal(float, int)
+    _sig_ytdlp_scaricato = Signal(str)   # "" = riuscito, altrimenti l'errore
 
     def __init__(self):
         super().__init__()
+        self._ytdlp_in_scarico, self._ytdlp_dopo = False, None
         self.setWindowTitle("Spot Cutter - Organizzatore Spot TV")
         self.setWindowIcon(QIcon(resource_path("Spot_Cutter.ico")))
         self.resize(1200, 900)
@@ -1318,6 +1317,7 @@ class SpotCutterApp(QMainWindow):
         self._sig_yt_video.connect(self._on_yt_video)
         self._sig_yt_info.connect(self._yt_after_info) # Aggiunto qui
         self._sig_duration.connect(self._on_duration_ready)
+        self._sig_ytdlp_scaricato.connect(self._on_ytdlp_scaricato)
 
         # 5. Threading
         self._worker_thread = None
@@ -2699,6 +2699,9 @@ class SpotCutterApp(QMainWindow):
         if not mancanti:
             self._on_log("ℹ️ Nessun txt mancante nella coda.", "cyan")
             return
+        if not strumento_presente("yt-dlp"):
+            self._proponi_ytdlp(dopo=self._on_cerca_txt_mancanti)
+            return
         self._on_log(f"🔎 Ricerca su YouTube dei txt mancanti: {len(mancanti)} video...", "cyan")
         self._btn_cerca_txt.setEnabled(False)
         self._btn_cerca_txt.setText(f"🔎 Ricerca 0/{len(mancanti)}...")
@@ -2732,6 +2735,8 @@ class SpotCutterApp(QMainWindow):
         del titolo e la pillola diventa verde; se no resta arancione, da confermare a mano.
         Ogni video si controlla una volta per sessione; le date inserite a mano non si toccano.
         """
+        if not strumento_presente("yt-dlp"):
+            return   # si rifà appena yt-dlp viene scaricato
         da_fare = []
         for vid, _, manuale in self.state.get("queue_files", []):
             if vid in self._date_verificate or (manuale and manuale.strip() not in ("", "--")):
@@ -2853,15 +2858,8 @@ class SpotCutterApp(QMainWindow):
         if not url:
             return
             
-        from video_engine import get_ytdlp_path
-        ytdlp_path = get_ytdlp_path()
-        # get_ytdlp_path ritorna "yt-dlp" come fallback se non trovato —
-        # verifichiamo che sia un file reale oppure che esista nel PATH
-        import shutil
-        if not os.path.isfile(ytdlp_path) and not shutil.which(ytdlp_path):
-            QMessageBox.warning(self, "yt-dlp mancante",
-                                "yt-dlp.exe non trovato.\n"
-                                "Metti yt-dlp.exe nella stessa cartella del programma.")
+        if not strumento_presente("yt-dlp"):
+            self._proponi_ytdlp(dopo=self._on_yt_download)
             return
 
         # ─── FIX ANTI-CRASH ──────────────────────────────────────────────────
@@ -3036,13 +3034,68 @@ class SpotCutterApp(QMainWindow):
                 "Metti ffmpeg.exe e ffprobe.exe nella cartella del programma "
                 "o nella sottocartella bin/, oppure aggiungili al PATH di sistema.")
 
-        from video_engine import get_ytdlp_path
-        ytdlp_bin = get_ytdlp_path()
-        
-        if os.path.exists(ytdlp_bin):
+        if strumento_presente("yt-dlp"):
             threading.Thread(target=self._update_ytdlp, daemon=True).start()
+        elif self.settings_storage.value("ytdlp_rifiutato", False, type=bool):
+            # Già detto di no una volta: all'avvio non si richiede più, solo quando serve
+            self._on_log("⚠️ yt-dlp non trovato: download da YouTube, ricerca dei txt e verifica "
+                         "delle date non funzionano. Il programma lo propone quando serve.", "orange")
         else:
-            self._sig_log.emit("⚠️ yt-dlp.exe non trovato nella cartella. Il download YouTube non funzionerà.", "orange")
+            self._proponi_ytdlp()
+
+    def _proponi_ytdlp(self, dopo=None) -> None:
+        """yt-dlp manca: si propone di scaricarlo. dopo() viene chiamata a scaricamento riuscito."""
+        if self._ytdlp_in_scarico:
+            self._on_log("⏳ Scaricamento di yt-dlp già in corso...", "orange")
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("yt-dlp mancante")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText("yt-dlp non è installato.\n\n"
+                    "Serve per scaricare i video da YouTube, cercare i txt mancanti e verificare "
+                    "le date.\n\n"
+                    "Spot Cutter può scaricarlo adesso dalla pagina ufficiale di yt-dlp "
+                    "(circa 18 MB, una volta sola) e metterlo nella cartella bin.\n\n"
+                    "Scaricarlo?")
+        btn_si = box.addButton("Scarica", QMessageBox.ButtonRole.YesRole)
+        box.addButton("Non ora", QMessageBox.ButtonRole.NoRole)
+        box.setDefaultButton(btn_si)
+        box.exec()
+        if box.clickedButton() is not btn_si:
+            self.settings_storage.setValue("ytdlp_rifiutato", True)
+            self._on_log("⚠️ yt-dlp non scaricato: le funzioni di YouTube restano spente. "
+                         "Il programma lo ripropone quando serve.", "orange")
+            return
+        self.settings_storage.setValue("ytdlp_rifiutato", False)
+        self._ytdlp_in_scarico, self._ytdlp_dopo = True, dopo
+        self._on_log("⬇️ Scaricamento di yt-dlp dalla pagina ufficiale...", "cyan")
+
+        def lavoro():
+            try:
+                scarica_ytdlp(lambda f: self._sig_progress.emit(f, f"Scaricamento yt-dlp... {int(f * 100)}%"))
+                self._sig_ytdlp_scaricato.emit("")
+            except Exception as e:
+                self._sig_ytdlp_scaricato.emit(str(e) or type(e).__name__)
+        threading.Thread(target=lavoro, daemon=True).start()
+
+    @Slot(str)
+    def _on_ytdlp_scaricato(self, errore: str):
+        self._ytdlp_in_scarico = False
+        dopo, self._ytdlp_dopo = self._ytdlp_dopo, None
+        if errore:
+            self._on_progress(0, "Pronto")
+            self._on_log(f"❌ Scaricamento di yt-dlp non riuscito: {errore}", "red")
+            QMessageBox.warning(self, "yt-dlp non scaricato",
+                                f"Non sono riuscito a scaricare yt-dlp:\n{errore}\n\n"
+                                "Controlla la connessione e riprova, oppure scaricalo a mano da\n"
+                                "https://github.com/yt-dlp/yt-dlp/releases\n"
+                                "e metti yt-dlp.exe nella cartella bin del programma.")
+            return
+        self._on_progress(1.0, "yt-dlp scaricato")
+        self._on_log("✅ yt-dlp scaricato nella cartella bin: le funzioni di YouTube sono attive.", "green")
+        self._verifica_date_online()
+        if dopo:
+            dopo()
 
     @Slot()
     def _update_ytdlp(self):

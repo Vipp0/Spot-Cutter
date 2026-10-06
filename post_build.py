@@ -22,13 +22,15 @@ EN: Place the following executables in this folder:
   ffprobe.exe  — https://ffmpeg.org/download.html (included with ffmpeg)
   yt-dlp.exe   — https://github.com/yt-dlp/yt-dlp/releases
 
-IT: Il programma cerca automaticamente gli eseguibili prima
-    in questa cartella bin/, poi nella cartella principale,
-    poi nel PATH di sistema.
+IT: yt-dlp.exe non serve metterlo a mano: se manca, il programma
+    propone di scaricarlo qui dalla pagina ufficiale.
+    Il programma cerca gli eseguibili prima nella cartella
+    principale, poi in questa cartella bin/, poi nel PATH di sistema.
 
-EN: The program automatically searches for executables first
-    in this bin/ folder, then in the main folder,
-    then in the system PATH.
+EN: yt-dlp.exe does not have to be added by hand: if missing, the
+    program offers to download it here from the official page.
+    The program searches for executables first in the main folder,
+    then in this bin/ folder, then in the system PATH.
 """
 with open(os.path.join(BIN_DIR, "README.txt"), "w", encoding="utf-8") as f:
     f.write(readme)

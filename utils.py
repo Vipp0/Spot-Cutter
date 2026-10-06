@@ -5,6 +5,7 @@ import re
 import os
 import sys
 import json
+import shutil
 import subprocess
 import asyncio
 import atexit
@@ -46,6 +47,70 @@ def get_tool_path(name: str) -> str:
         if os.path.isfile(path):
             return path
     return name
+
+def strumento_presente(name: str) -> bool:
+    """True se l'eseguibile c'è: nella cartella del programma, in bin/ o nel PATH di sistema."""
+    path = get_tool_path(name)
+    return os.path.isfile(path) or bool(shutil.which(path))
+
+def aggiungi_strumenti_al_path():
+    """
+    Mette in testa al PATH del programma la sua cartella e bin/, se contengono ffmpeg o ffprobe:
+    così li trova anche chi viene lanciato da noi (yt-dlp per unire video e audio, ffplay).
+    """
+    base = _get_base_dir()
+    attuali = os.environ.get("PATH", "").split(os.pathsep)
+    for cartella in (os.path.join(base, "bin"), base):
+        if cartella not in attuali and any(os.path.isfile(os.path.join(cartella, exe))
+                                           for exe in ("ffmpeg.exe", "ffprobe.exe")):
+            os.environ["PATH"] = cartella + os.pathsep + os.environ.get("PATH", "")
+
+# Pagina ufficiale di yt-dlp: l'ultima versione e l'elenco delle impronte SHA-256
+YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+
+def scarica_ytdlp(progresso=None) -> str:
+    """
+    Scarica yt-dlp.exe dalla pagina ufficiale in bin/ e ne controlla l'impronta SHA-256.
+    progresso(frazione 0-1) viene chiamata durante lo scaricamento. Ritorna il percorso;
+    se qualcosa va storto solleva un'eccezione e non lascia file a metà.
+    """
+    import hashlib
+    import urllib.request
+    cartella = os.path.join(_get_base_dir(), "bin")
+    os.makedirs(cartella, exist_ok=True)
+    finale, parziale = os.path.join(cartella, "yt-dlp.exe"), os.path.join(cartella, "yt-dlp.exe.part")
+
+    def apri(nome):
+        req = urllib.request.Request(YTDLP_URL + nome, headers={"User-Agent": "SpotCutter"})
+        return urllib.request.urlopen(req, timeout=30)
+
+    try:
+        with apri("SHA2-256SUMS") as r:
+            impronte = r.read().decode("utf-8", "replace")
+        attesa = next((riga.split()[0].lower() for riga in impronte.splitlines()
+                       if riga.split()[1:] == ["yt-dlp.exe"]), None)
+        if not attesa:
+            raise RuntimeError("impronta di yt-dlp.exe non trovata nella pagina ufficiale")
+        sha = hashlib.sha256()
+        with apri("yt-dlp.exe") as r, open(parziale, "wb") as f:
+            totale, fatti = int(r.headers.get("Content-Length") or 0), 0
+            while True:
+                blocco = r.read(256 * 1024)
+                if not blocco:
+                    break
+                f.write(blocco)
+                sha.update(blocco)
+                fatti += len(blocco)
+                if progresso and totale:
+                    progresso(min(fatti / totale, 1.0))
+        if sha.hexdigest() != attesa:
+            raise RuntimeError("il file scaricato non corrisponde all'impronta ufficiale")
+        os.replace(parziale, finale)
+        return finale
+    finally:
+        if os.path.exists(parziale):
+            try: os.remove(parziale)
+            except OSError: pass
 
 @atexit.register
 def cleanup_temp_files():
