@@ -1283,6 +1283,7 @@ class SpotCutterApp(QMainWindow):
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
         self._date_verificate = set()   # video già mandati alla verifica online della data
+        self._txt_auto_cartelle = {}    # video in ricerca automatica del txt -> cartella del video
         self._txt_in_ricerca = set()    # ricerca automatica del txt in corso: pillola con la clessidra
         self._date_in_verifica = set()  # verifica in corso: pillola grigio-azzurra con la clessidra
         self._date_esiti = {}           # video -> perché la data non è stata confermata online
@@ -2767,28 +2768,45 @@ class SpotCutterApp(QMainWindow):
                 da_fare.append(vid)
         if senza_txt:
             self._on_log(f"🔎 Ricerca automatica del txt su YouTube: {len(senza_txt)} video...", "cyan")
-            cartella = self.state["current_dir"]   # i txt vanno accanto a questi video
-
-            def uno(vid, r):
-                self._txt_in_ricerca.discard(vid)
-                detto = vid in self._date_in_verifica and not r.get("data")
-                if vid in self._date_in_verifica:
-                    self._on_data_verificata(vid, r)
-                if not (detto and r["esito"] != "ok"):   # il motivo è già nel log della data
-                    self._salva_txt_trovato(vid, r, cartella)
-                self.render_queue()
-
-            def fine():   # ricerca interrotta da un errore: niente clessidre rimaste accese
-                self._txt_in_ricerca.difference_update(senza_txt)
-                self._date_in_verifica.difference_update(senza_txt)
-                self.render_queue()
-            self._avvia_ricerca_youtube(senza_txt, uno, fine)
+            for vid in senza_txt:   # i txt vanno accanto a questi video
+                self._txt_auto_cartelle[vid] = self.state["current_dir"]
+            # Gli esiti arrivano da un altro thread: vanno ricevuti da metodi della finestra
+            # (non da funzioni locali), così Qt li esegue nel thread dell'interfaccia
+            self._avvia_ricerca_youtube(senza_txt, self._on_txt_auto, self._on_txt_auto_fine)
             if not da_fare:
                 self.render_queue()   # mostra subito la clessidra
         if da_fare:
             self._on_log(f"📅 Verifica online della data: {len(da_fare)} video...", "cyan")
             self._avvia_ricerca_youtube(da_fare, self._on_data_verificata, solo_data=True)
             self.render_queue()   # mostra subito la clessidra
+
+    @Slot(str, dict)
+    def _on_txt_auto(self, vid: str, r: dict):
+        """Esito della ricerca automatica del txt per un video entrato in coda senza."""
+        cartella = self._txt_auto_cartelle.pop(vid, None)
+        if cartella is None:
+            return
+        self._txt_in_ricerca.discard(vid)
+        detto = vid in self._date_in_verifica and not r.get("data")
+        if vid in self._date_in_verifica:
+            self._on_data_verificata(vid, r)
+        if not (detto and r["esito"] != "ok"):   # il motivo è già nel log della data
+            self._salva_txt_trovato(vid, r, cartella)
+        self.render_queue()
+
+    @Slot()
+    def _on_txt_auto_fine(self):
+        """Ricerca automatica finita (o interrotta da un errore): niente clessidre rimaste accese."""
+        cercati = getattr(self.sender(), "video", None)
+        rimasti = [v for v in (cercati if cercati is not None else list(self._txt_auto_cartelle))
+                   if v in self._txt_auto_cartelle]
+        if not rimasti:
+            return
+        for vid in rimasti:
+            self._txt_auto_cartelle.pop(vid, None)
+        self._txt_in_ricerca.difference_update(rimasti)
+        self._date_in_verifica.difference_update(rimasti)
+        self.render_queue()
 
     @Slot(str, dict)
     def _on_data_verificata(self, vid: str, r: dict):

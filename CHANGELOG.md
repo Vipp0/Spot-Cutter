@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.10
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **Chiusura improvvisa durante la ricerca automatica del txt** — nella 1.3.9, aggiungendo alla coda dei video senza txt, i video in coda potevano sparire e subito dopo il programma si chiudeva da solo. Gli esiti della ricerca automatica aggiornavano la coda da un thread diverso da quello dell'interfaccia; ora arrivano nel modo giusto, come per il pulsante "Cerca txt mancanti". I video già forniti di txt non erano interessati
+- 🇬🇧 **Sudden exit during the automatic txt search** — in 1.3.9, adding videos without a txt to the queue could make the queued videos disappear and the program close by itself right after. The results of the automatic search updated the queue from a thread other than the interface one; they now arrive the right way, as with the "Search missing txt" button. Videos that already had a txt were not affected
+
+---
+
 ## 🎬 Spot Cutter 1.3.9
 
 ### ✨ Nuove funzionalità / New features
