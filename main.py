@@ -1362,12 +1362,38 @@ class SpotCutterApp(QMainWindow):
 
     def _on_duration_ready(self, total: float, count: int):
         """Aggiorna il label durata sul thread UI."""
-        h  = int(total) // 3600
-        m  = (int(total) % 3600) // 60
-        if h > 0:
-            self._lbl_duration.setText(f"{count} video · {h}h {m:02d}m")
-        else:
-            self._lbl_duration.setText(f"{count} video · {m}m")
+        def hm(sec):
+            h, m = int(sec) // 3600, (int(sec) % 3600) // 60
+            return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
+        testo = f"{count} video · {hm(total)} di video"
+        # Tempo di lavoro: dalla velocità misurata su questo computer nelle elaborazioni
+        # fatte finora, con o senza master secondo l'opzione attiva. Niente misura, niente stima.
+        velocita = self.settings_storage.value(self._chiave_velocita(), 0.0, type=float)
+        if velocita > 0 and total > 0:
+            lavoro = total * velocita
+            testo += " · lavoro: " + ("meno di 1m" if lavoro < 60 else f"circa {hm(lavoro + 30)}")
+        self._lbl_duration.setText(testo)
+
+    def _chiave_velocita(self, master: bool | None = None) -> str:
+        master = bool(self._s.get("use_master", False)) if master is None else master
+        return "velocita_master" if master else "velocita_diretto"
+
+    def _impara_velocita(self):
+        """
+        Dai video appena finiti: secondi di lavoro per secondo di video, con e senza master.
+        La media si aggiorna piano (60% il valore di prima, 40% questa sessione), così un
+        video anomalo non la stravolge; resta nelle impostazioni di questo computer.
+        """
+        tempi = self.state.pop("tempi_video", [])
+        for master in (False, True):
+            durata = sum(d for d, _, m in tempi if m == master)
+            lavoro = sum(t for _, t, m in tempi if m == master)
+            if durata < 30:
+                continue
+            chiave = self._chiave_velocita(master)
+            prima = self.settings_storage.value(chiave, 0.0, type=float)
+            ora = lavoro / durata
+            self.settings_storage.setValue(chiave, ora if prima <= 0 else 0.6 * prima + 0.4 * ora)
 
     def _on_expand_log(self, checked: bool):
         """Espande o riduce il log con animazione."""
@@ -1915,11 +1941,13 @@ class SpotCutterApp(QMainWindow):
         toolbar.addStretch()
 
         # Durata totale a destra
-        lbl_duration_title = QLabel("Durata totale:")
+        lbl_duration_title = QLabel("In coda:")
         lbl_duration_title.setObjectName("lbl_duration")
         self._lbl_duration = QLabel("—")
         self._lbl_duration.setObjectName("lbl_duration")
-        self._lbl_duration.setToolTip("Durata totale dei video in coda")
+        self._lbl_duration.setToolTip("Durata totale dei video in coda e tempo di lavoro stimato.\n"
+                                      "La stima usa la velocità misurata su questo computer nelle\n"
+                                      "elaborazioni già fatte: compare dopo la prima.")
         toolbar.addWidget(lbl_duration_title)
         toolbar.addWidget(self._lbl_duration)
 
@@ -2248,6 +2276,8 @@ class SpotCutterApp(QMainWindow):
         else:
             self._on_log(f"🛑 INTERROTTA dopo {m}m {s_}s", "orange")
 
+        self._impara_velocita()
+
         # Rimuove dalla coda i video completati (presenti nello storico), anche dopo uno
         # Stop: così premendo di nuovo Avvia si riparte da quelli che mancano
         storico_path = os.path.join(
@@ -2553,6 +2583,7 @@ class SpotCutterApp(QMainWindow):
         self.state["stats_counts"] = {k: 0 for k in self.state["stats_counts"]}
         self.state["parallel_cuts"] = int(self._s.get("parallel_cuts", 0))
         self.state["use_master"] = bool(self._s.get("use_master", False))
+        self.state["tempi_video"] = []
         self.state["saltati"] = []
         # Il motore aspetta qualche secondo i video la cui data è ancora in verifica online
         self.state["date_in_verifica"] = self._date_in_verifica
@@ -2910,6 +2941,7 @@ class SpotCutterApp(QMainWindow):
                       vals.get("use_master", False))
         self._s = load_settings()
         self._on_log("✅ Impostazioni salvate.", "cyan")
+        self._update_duration_label()   # la stima del lavoro dipende dall'opzione master
 
     # ══════════════════════════════════════════════════════════════════════
     # YOUTUBE DOWNLOAD

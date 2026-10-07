@@ -175,6 +175,7 @@ class VideoEngine:
                 continue
 
             # --- LOGICA DI INIZIO VIDEO ---
+            t_video = time.time()   # per la stima del tempo di lavoro (vedi "tempi_video")
             # 🔵 NOTIFICA INIZIO (Diventa BLU nella lista)
             if status_cb:
                 await status_cb(idx, "⏳ In lavorazione...", "#2196F3")
@@ -533,6 +534,11 @@ class VideoEngine:
                     if status_cb:
                         await status_cb(idx, "❌ Nessun taglio", "#FF3B30")
                 else:
+                    # Quanto ci è voluto rispetto alla durata del video: la finestra ne ricava
+                    # la velocità di questo computer, per stimare il lavoro della coda
+                    if duration:
+                        state.setdefault("tempi_video", []).append(
+                            (duration, time.time() - t_video, bool(usa_master)))
                     # Scrivi nello storico solo se almeno un taglio è riuscito
                     self._write_storico(
                         storico_path = os.path.join(

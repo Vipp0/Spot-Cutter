@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.3.11
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Stima del tempo di lavoro della coda** — l'etichetta in alto a destra mostrava solo la durata totale dei video ("20 video · 3h 12m"), che si poteva scambiare per il tempo mancante. Ora si chiama "In coda:" e dice entrambe le cose: "20 video · 3h 12m di video · lavoro: circa 25m". La stima usa la velocità reale del computer: a ogni elaborazione il programma misura quanto ci ha messo rispetto alla durata dei video e ne tiene una media, separata per il taglio diretto e per il master, usando quella dell'opzione attiva. Compare dopo la prima elaborazione e si adatta da sola a computer diversi
+- 🇬🇧 **Estimated working time for the queue** — the label at the top right only showed the total length of the videos ("20 videos · 3h 12m"), which could be mistaken for the time left. It is now called "In queue:" and says both: "20 videos · 3h 12m of video · work: about 25m". The estimate uses the real speed of the computer: at each run the program measures how long it took compared with the length of the videos and keeps an average, separate for direct cutting and for the master, using the one for the active option. It appears after the first run and adapts by itself to different computers
+
+---
+
 ## 🎬 Spot Cutter 1.3.10
 
 ### 🐛 Correzioni / Fixes
