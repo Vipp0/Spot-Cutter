@@ -707,3 +707,60 @@ QProgressBar::chunk {
     background-color: #1D3B53;
     border-radius: 3px;
 }
+
+/* ── PANNELLO IN BASSO: AVANZAMENTO + LOG ──────────────────────────────── */
+QFrame#console {
+    background-color: #15293B;
+    border-radius: 12px;
+}
+QFrame#console QLabel#lbl_progress {
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 600;
+}
+QFrame#console QLabel#lbl_progress_perc {
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 600;
+}
+QFrame#console QLabel#lbl_progress_totale {
+    color: #8FA1B3;
+    font-size: 12px;
+}
+QFrame#console QProgressBar {
+    background-color: #264760;
+    border-radius: 3px;
+    min-height: 0px;
+}
+QFrame#console QProgressBar#pb_current {
+    max-height: 6px;
+}
+QFrame#console QProgressBar#pb_global {
+    max-height: 4px;
+    border-radius: 2px;
+}
+QFrame#console QProgressBar#pb_current::chunk {
+    background-color: #9CC3E4;
+    border-radius: 3px;
+}
+QFrame#console QProgressBar#pb_global::chunk {
+    background-color: #E8541E;
+    border-radius: 2px;
+}
+QFrame#console QTextEdit#log_box {
+    background-color: transparent;
+    border: none;
+    border-top: 1px solid #264760;
+    border-radius: 0px;
+    padding: 8px 0px 0px 0px;
+}
+QFrame#console QPushButton#btn_expand_log {
+    color: #8FA1B3;
+}
+QFrame#console QPushButton#btn_expand_log:hover,
+QFrame#console QPushButton#btn_expand_log:checked {
+    background-color: #264760;
+    color: #FFFFFF;
+}
+QFrame#console QScrollBar::handle:vertical { background: #35536C; }
+QFrame#console QScrollBar::handle:vertical:hover { background: #4A6A85; }

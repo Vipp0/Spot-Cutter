@@ -2029,52 +2029,61 @@ class SpotCutterApp(QMainWindow):
         self._queue_scroll.setWidget(self._queue_container)
         layout.addWidget(self._queue_scroll, stretch=1)
 
-        # Barra progresso corrente
-        self._pb_label = QLabel("Progresso: 0%")
+        # Pannello unico in basso: avanzamento del video, avanzamento totale e log
+        console = QFrame()
+        console.setObjectName("console")
+        c_layout = QVBoxLayout(console)
+        c_layout.setContentsMargins(16, 12, 12, 10)
+        c_layout.setSpacing(6)
+
+        riga_video = QHBoxLayout()
+        self._pb_label = QLabel("Pronto")
         self._pb_label.setObjectName("lbl_progress")
-        layout.addWidget(self._pb_label)
+        self._pb_perc = QLabel("")
+        self._pb_perc.setObjectName("lbl_progress_perc")
+        riga_video.addWidget(self._pb_label, stretch=1)
+        riga_video.addWidget(self._pb_perc)
+        riga_video.addSpacing(4)
+        c_layout.addLayout(riga_video)
 
         self._pb = QProgressBar()
         self._pb.setObjectName("pb_current")
         self._pb.setRange(0, 1000)
         self._pb.setValue(0)
-        self._pb.setFixedHeight(10)
+        self._pb.setFixedHeight(6)
         self._pb.setTextVisible(False)
-        layout.addWidget(self._pb)
+        c_layout.addWidget(self._pb)
 
-        # Barra progresso globale
-        self._pb_global_label = QLabel("Progresso Totale: 0/0 video")
-        self._pb_global_label.setObjectName("lbl_progress")
-        layout.addWidget(self._pb_global_label)
-
-        self._pb_global = QProgressBar()
-        self._pb_global.setObjectName("pb_global")
-        self._pb_global.setRange(0, 1000)
-        self._pb_global.setValue(0)
-        self._pb_global.setFixedHeight(10)
-        self._pb_global.setTextVisible(False)
-        layout.addWidget(self._pb_global)
-
-        # Log console con bottone espandi
-        log_header = QHBoxLayout()
-        lbl_log = QLabel("Log")
-        lbl_log.setObjectName("lbl_progress")
+        riga_totale = QHBoxLayout()
+        self._pb_global_label = QLabel("")
+        self._pb_global_label.setObjectName("lbl_progress_totale")
         btn_expand_log = QPushButton(glifo("espandi", "⛶"))
         btn_expand_log.setObjectName("btn_expand_log")
         btn_expand_log.setFixedSize(22, 22)
         btn_expand_log.setToolTip("Espandi/riduci log")
         btn_expand_log.setCheckable(True)
         btn_expand_log.clicked.connect(self._on_expand_log)
-        log_header.addWidget(lbl_log)
-        log_header.addStretch()
-        log_header.addWidget(btn_expand_log)
-        layout.addLayout(log_header)
+        riga_totale.addWidget(self._pb_global_label, stretch=1)
+        riga_totale.addWidget(btn_expand_log)
+        c_layout.addLayout(riga_totale)
+
+        self._pb_global = QProgressBar()
+        self._pb_global.setObjectName("pb_global")
+        self._pb_global.setRange(0, 1000)
+        self._pb_global.setValue(0)
+        self._pb_global.setFixedHeight(4)
+        self._pb_global.setTextVisible(False)
+        c_layout.addWidget(self._pb_global)
+        c_layout.addSpacing(4)
 
         self._log = QTextEdit()
         self._log.setObjectName("log_box")
         self._log.setReadOnly(True)
         self._log.setFixedHeight(130)
-        layout.addWidget(self._log)
+        c_layout.addWidget(self._log)
+
+        layout.addWidget(console)
+        self._on_global_progress(0, 0)
 
         parent_layout.addWidget(main, stretch=1)
 
@@ -2285,14 +2294,15 @@ class SpotCutterApp(QMainWindow):
     @Slot(float, str)
     def _on_progress(self, value: float, label: str):
         self._pb.setValue(int(value * 1000))
-        self._pb_label.setText(label)
+        self._pb_label.setText("Pronto" if label == "Progresso: 0%" else label)
+        self._pb_perc.setText(f"{int(value * 100)}%" if value > 0 else "")
 
     @Slot(int, int)
     def _on_global_progress(self, index: int, total: int):
         v = int((index / total * 1000)) if total > 0 else 0
         self._pb_global.setValue(v)
         self._pb_global_label.setText(
-            f"Progresso Totale: {index}/{total} video")
+            f"Totale: {index} di {total} video" if total > 0 else "Totale: nessuna elaborazione in corso")
 
     @Slot(int, str, str)
     def _on_status(self, idx: int, status: str, color: str):

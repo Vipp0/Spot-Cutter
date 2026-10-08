@@ -15,6 +15,9 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Icone uniformi al posto delle emoji** — pulsanti, card e barra della coda usano le icone di sistema di Windows, tutte dello stesso disegno; i pulsanti delle card si colorano solo al passaggio del mouse. Le pillole di txt e data hanno un fondo chiaro con il testo scuro dello stesso colore (verde, arancione, rosso e grigio-azzurro mantengono il loro significato) e i contatori in alto mostrano il nome in grigio e il numero nel colore della categoria, leggibile su bianco
 - 🇬🇧 **Consistent icons instead of emoji** — buttons, cards and the queue bar use the Windows system icons, all in the same style; card buttons take colour only on hover. The txt and date pills have a light background with dark text of the same colour (green, orange, red and grey-blue keep their meaning) and the counters at the top show the name in grey and the number in the category colour, readable on white
 
+- 🇮🇹 **Avanzamento e log in un pannello unico** — in basso c'è un solo pannello blu notte: in alto l'operazione in corso con la percentuale e la sua barra, sotto il totale dei video con la barra arancione, e poi il log. Occupa meno spazio di prima, quindi la coda ne ha di più; a programma fermo dice "Pronto"
+- 🇬🇧 **Progress and log in a single panel** — at the bottom there is one night-blue panel: at the top the current operation with its percentage and bar, below it the total of the videos with the orange bar, then the log. It takes less room than before, so the queue has more; when idle it says "Ready"
+
 - 🇮🇹 **Finestre secondarie** — impostazioni, editor del txt, data, storico, tagli manuali e finestre di messaggio seguono lo stesso stile: un pulsante principale blu notte per finestra, gli altri tenui
 - 🇬🇧 **Secondary windows** — settings, txt editor, date, history, manual cuts and message boxes follow the same style: one night-blue main button per window, the others soft
 
