@@ -49,7 +49,7 @@ from utils import (
     ESTENSIONI_VIDEO, extract_date_info,
     get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
     get_seconds, get_tool_path, motivo_non_pronto, parse_settings, load_settings, save_settings,
-    aggiungi_strumenti_al_path, strumento_presente, scarica_ytdlp,
+    aggiungi_strumenti_al_path, strumento_presente, scarica_ytdlp, miniatura_video, RIGA_TXT,
 )
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
@@ -319,35 +319,53 @@ class VideoCard(QFrame):
                  status_text: str, status_color: str,
                  is_first: bool, is_last: bool,
                  is_running: bool, current_dir: str = "", parent=None,
-                 date_tooltip: str | None = None, txt_in_ricerca: bool = False):
+                 date_tooltip: str | None = None, txt_in_ricerca: bool = False,
+                 miniatura: QPixmap | None = None, durata: float = 0.0):
         super().__init__(parent)
         self.idx = idx
         self.vid = vid
         self.current_dir = current_dir
+        self._durata = durata
 
         self.setObjectName("VideoCard")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         # Layout principale
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(15, 12, 15, 12)
-        layout.setSpacing(15)
+        layout.setContentsMargins(12, 10, 15, 10)
+        layout.setSpacing(12)
 
         # 1. Badge numero
         badge = QLabel(str(idx + 1))
         badge.setObjectName("badge_index")
-        badge.setFixedWidth(25)
+        badge.setFixedWidth(22)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(badge)
 
+        # Miniatura del video: arriva dopo, dal lavoro in sottofondo (vedi set_miniatura)
+        self.thumb = QLabel()
+        self.thumb.setObjectName("card_thumb")
+        self.thumb.setFixedSize(80, 60)
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.thumb)
+        self.set_miniatura(miniatura)
+
         # 2. Colonna Titolo e Pillola
         text_col = QVBoxLayout()
-        text_col.setSpacing(6)
+        text_col.setSpacing(3)
 
-        title_lbl = QLabel(vid)
+        title_lbl = QLabel(os.path.splitext(vid)[0])
         title_lbl.setObjectName("card_title")
         title_lbl.setToolTip(vid)
+        # un titolo lungo si accorcia invece di allargare la card oltre la finestra
+        title_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         text_col.addWidget(title_lbl)
+
+        # Riga di informazioni: canale · durata · righe del txt
+        self.info_lbl = QLabel()
+        self.info_lbl.setObjectName("card_info")
+        text_col.addWidget(self.info_lbl)
+        text_col.addSpacing(2)
 
         # Contenitore per la pillola interattiva
         self.pill_container = QWidget()
@@ -414,9 +432,57 @@ class VideoCard(QFrame):
         if date_tooltip:
             self.date_part.setToolTip(date_tooltip)
 
+        self._aggiorna_info()
+
         # Click eventi
         self.txt_part.mousePressEvent = lambda e: self.sig_edit_txt.emit(self.vid)
         self.date_part.mousePressEvent = lambda e: self.sig_edit_date.emit(self.idx)
+
+    def set_miniatura(self, pm: QPixmap | None):
+        """Mostra il fotogramma con gli angoli arrotondati; finché non c'è, un'icona su fondo tenue."""
+        from PySide6.QtGui import QPainter, QPainterPath
+        w, h = self.thumb.width(), self.thumb.height()
+        if pm is None or pm.isNull():
+            self.thumb.setText(glifo("video", "🎬"))
+            return
+        scalata = pm.scaled(w * 2, h * 2, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                            Qt.TransformationMode.SmoothTransformation)
+        tonda = QPixmap(w * 2, h * 2)
+        tonda.fill(Qt.GlobalColor.transparent)
+        p = QPainter(tonda)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        percorso = QPainterPath()
+        percorso.addRoundedRect(0, 0, w * 2, h * 2, 12, 12)
+        p.setClipPath(percorso)
+        p.drawPixmap((w * 2 - scalata.width()) // 2, (h * 2 - scalata.height()) // 2, scalata)
+        p.end()
+        tonda.setDevicePixelRatio(2)
+        self.thumb.setText("")
+        self.thumb.setPixmap(tonda)
+
+    def set_durata(self, durata: float):
+        self._durata = durata
+        self._aggiorna_info()
+
+    def _aggiorna_info(self):
+        """Canale · durata · quante righe con orario ha il txt (cioè quanti clip usciranno)."""
+        parti = []
+        canale = VideoEngine._extract_channel(self.vid)
+        if canale:
+            parti.append(canale)
+        if self._durata > 0:
+            m, sec = divmod(int(self._durata), 60)
+            parti.append(f"{m} min {sec:02d} s" if m else f"{sec} s")
+        try:
+            with open(os.path.join(self.current_dir, os.path.splitext(self.vid)[0] + ".txt"),
+                      "r", encoding="utf-8", errors="replace") as f:
+                righe = sum(1 for r in f if RIGA_TXT.match(r.strip()))
+            if righe:
+                parti.append(f"{righe} clip nel txt")
+        except OSError:
+            pass
+        self.info_lbl.setText("  ·  ".join(parti))
+        self.info_lbl.setVisible(bool(parti))
 
     def _update_txt_tooltip(self):
         """Mostra le prime 8 righe del TXT come tooltip sulla pillola sinistra."""
@@ -1312,6 +1378,7 @@ class SpotCutterApp(QMainWindow):
     _sig_yt_video        = Signal(list)
     _sig_yt_info         = Signal(str, object)
     _sig_duration        = Signal(float, int)
+    _sig_info_video      = Signal(str, float, str)   # (percorso del video, durata, percorso della miniatura)
     _sig_ytdlp_scaricato = Signal(str)   # "" = riuscito, altrimenti l'errore
 
     def __init__(self):
@@ -1345,6 +1412,8 @@ class SpotCutterApp(QMainWindow):
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
         self._date_verificate = set()   # video già mandati alla verifica online della data
+        self._info_video = {}           # percorso del video -> (durata, miniatura) già letti
+        self._info_in_corso = set()     # percorsi di cui si sta leggendo durata e miniatura
         self._txt_auto_cartelle = {}    # video in ricerca automatica del txt -> cartella del video
         self._txt_in_ricerca = set()    # ricerca automatica del txt in corso: pillola con la clessidra
         self._date_in_verifica = set()  # verifica in corso: pillola grigio-azzurra con la clessidra
@@ -1387,6 +1456,7 @@ class SpotCutterApp(QMainWindow):
         self._sig_yt_video.connect(self._on_yt_video)
         self._sig_yt_info.connect(self._yt_after_info) # Aggiunto qui
         self._sig_duration.connect(self._on_duration_ready)
+        self._sig_info_video.connect(self._on_info_video)
         self._sig_ytdlp_scaricato.connect(self._on_ytdlp_scaricato)
 
         # 5. Threading
@@ -2018,6 +2088,7 @@ class SpotCutterApp(QMainWindow):
         self._queue_scroll = QScrollArea()
         self._queue_scroll.setWidgetResizable(True)
         self._queue_scroll.setObjectName("queue_scroll")
+        self._queue_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self._queue_container = QWidget()
         self._queue_container.setObjectName("queue_container")
@@ -2189,6 +2260,7 @@ class SpotCutterApp(QMainWindow):
                 except Exception:
                     pass
 
+            info = self._info_video.get(os.path.join(self.state.get("current_dir", ""), vid), (0.0, None))
             card = VideoCard(
                 idx=i, vid=vid, has_txt=has_txt,
                 status_text=st, status_color=sc,
@@ -2196,7 +2268,8 @@ class SpotCutterApp(QMainWindow):
                 is_running=running,
                 current_dir=self.state.get("current_dir", ""),
                 date_tooltip=None if is_done else tip_data,
-                txt_in_ricerca=vid in self._txt_in_ricerca)
+                txt_in_ricerca=vid in self._txt_in_ricerca,
+                miniatura=info[1], durata=info[0])
 
             card.sig_move_up.connect(self._move_item_up)
             card.sig_move_down.connect(self._move_item_down)
@@ -2210,8 +2283,39 @@ class SpotCutterApp(QMainWindow):
 
         self._sync_buttons()
         self._update_duration_label()
+        self._carica_info_video()
         # I video appena entrati senza txt o con una data da confermare si cercano online
         QTimer.singleShot(0, self._verifica_date_online)
+
+    def _carica_info_video(self):
+        """Durata e miniatura dei video in coda che non le hanno ancora, lette in sottofondo."""
+        cartella = self.state.get("current_dir", "")
+        da_fare = [p for p in (os.path.join(cartella, v) for v, _, _ in self.state.get("queue_files", []))
+                   if p not in self._info_video and p not in self._info_in_corso]
+        if not da_fare:
+            return
+        self._info_in_corso.update(da_fare)
+
+        def lavoro():
+            for p in da_fare:
+                durata = get_video_duration(p)
+                self._sig_info_video.emit(p, durata, miniatura_video(p, durata) or "")
+        threading.Thread(target=lavoro, daemon=True).start()
+
+    @Slot(str, float, str)
+    def _on_info_video(self, percorso: str, durata: float, mini: str):
+        self._info_in_corso.discard(percorso)
+        pm = QPixmap(mini) if mini else None
+        self._info_video[percorso] = (durata, pm if pm is not None and not pm.isNull() else None)
+        if os.path.dirname(percorso) != self.state.get("current_dir", ""):
+            return
+        for card in self.state.get("status_labels", {}).values():
+            if isinstance(card, VideoCard) and card.vid == os.path.basename(percorso):
+                try:
+                    card.set_miniatura(self._info_video[percorso][1])
+                    card.set_durata(durata)
+                except RuntimeError:   # card già sostituita da un ridisegno
+                    pass
 
     def _non_pronti(self) -> list:
         """[(video, motivo)] dei video in coda che non si possono ancora elaborare."""

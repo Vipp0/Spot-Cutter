@@ -3,7 +3,8 @@
    Tutta la grafica dell'applicazione. I colori vengono dal logo:
 
      blu notte   #1D3B53   testi forti, pulsanti principali, barra del video
-     arancio     #E8541E   UN solo accento: Avvia e l'avanzamento totale
+     arancio     #E8541E   accento del logo: l'avanzamento totale
+     verde/rosso #1E8E4E / #C8372D   solo Avvia e Stop
      inchiostro  #1F2933   testo            #52606D  testo secondario
      grigio      #8592A0   note             #E4E7EB  bordi
      fondo       #F5F6F8   pagina           #FFFFFF  pannelli e card
@@ -241,7 +242,7 @@ QPushButton#btn_clear:disabled {
     background-color: transparent;
 }
 
-/* AVVIA: l'unico pulsante arancione della finestra */
+/* AVVIA verde, STOP rosso: i due soli pulsanti "pieni" e colorati della finestra */
 QPushButton#btn_run {
     color: #FFFFFF;
     border: none;
@@ -251,13 +252,13 @@ QPushButton#btn_run {
     min-height: 52px;
 }
 QPushButton#btn_run[stato="pronto"] {
-    background-color: #E8541E;
+    background-color: #1E8E4E;
 }
 QPushButton#btn_run[stato="pronto"]:hover {
-    background-color: #D24612;
+    background-color: #187A42;
 }
 QPushButton#btn_run[stato="pronto"]:pressed {
-    background-color: #BC3D0E;
+    background-color: #136637;
 }
 QPushButton#btn_run[stato="disabilitato"],
 QPushButton#btn_run:disabled {
@@ -266,17 +267,16 @@ QPushButton#btn_run:disabled {
 }
 
 QPushButton#btn_stop {
-    background-color: #FFFFFF;
-    color: #B3261E;
-    border: 2px solid #B3261E;
+    background-color: #C8372D;
+    color: #FFFFFF;
+    border: none;
     border-radius: 10px;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     min-height: 45px;
 }
 QPushButton#btn_stop:hover {
-    background-color: #B3261E;
-    color: #FFFFFF;
+    background-color: #AD2C23;
 }
 
 /* ── CODA VIDEO ─────────────────────────────────────────────────────────── */
@@ -764,3 +764,16 @@ QFrame#console QPushButton#btn_expand_log:checked {
 }
 QFrame#console QScrollBar::handle:vertical { background: #35536C; }
 QFrame#console QScrollBar::handle:vertical:hover { background: #4A6A85; }
+
+/* ── CARD: MINIATURA E RIGA DI INFORMAZIONI ─────────────────────────────── */
+QLabel#card_thumb {
+    background-color: #EEF2F6;
+    border-radius: 6px;
+    color: #A7B1BC;
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol";
+    font-size: 20px;
+}
+QLabel#card_info {
+    color: #52606D;
+    font-size: 12px;
+}

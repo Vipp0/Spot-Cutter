@@ -301,6 +301,34 @@ def get_video_duration(file_path):
         return float(res.stdout.strip())
     except: return 0.0
 
+def miniatura_video(file_path, durata=0.0):
+    """
+    Un fotogramma del video (192 px di larghezza) per la card della coda: percorso del jpg,
+    o None se non si riesce. Si tiene in una cartella temporanea e si rifà solo se il video
+    cambia. Si prende un po' dopo l'inizio e si sceglie il fotogramma più rappresentativo di
+    due secondi (filtro thumbnail), perché il primo è spesso nero.
+    """
+    import hashlib, tempfile
+    try:
+        st = os.stat(file_path)
+    except OSError:
+        return None
+    cartella = os.path.join(tempfile.gettempdir(), "SpotCutter_miniature")
+    os.makedirs(cartella, exist_ok=True)
+    chiave = hashlib.md5(f"2|{file_path}|{st.st_size}|{st.st_mtime}".encode("utf-8")).hexdigest()
+    out = os.path.join(cartella, chiave + ".jpg")
+    if os.path.exists(out) and os.path.getsize(out) > 0:
+        return out
+    t = min(max(durata * 0.1, 3.0), 30.0) if durata > 6 else 0.0
+    cmd = [get_tool_path('ffmpeg'), '-v', 'error', '-y', '-ss', f"{t:.2f}", '-i', file_path,
+           '-frames:v', '1', '-vf', 'thumbnail=50,scale=192:-2', '-q:v', '4', out]
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        subprocess.run(cmd, capture_output=True, creationflags=flags, timeout=30)
+    except Exception:
+        return None
+    return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
+
 def parse_settings(input_crf, input_cusc_i, input_cusc_f, input_toll, input_bth, input_bdur):
     errors = []
     d = SETTINGS_DEFAULTS
