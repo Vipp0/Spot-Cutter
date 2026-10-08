@@ -4,10 +4,12 @@
 
 > 🇬🇧 Automatically extracts TV commercials, promos and bumpers from digitized recordings, organizing them into a personal ad library for use with IPTV platforms like DizqueTV and Tunarr. Developed with AI assistance.
 
-![Version](https://img.shields.io/badge/version-1.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Python](https://img.shields.io/badge/python-3.11+-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+
+![Spot Cutter](docs/screenshot.png)
 
 ---
 
