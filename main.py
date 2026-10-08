@@ -62,6 +62,53 @@ def resource_path(relative_path):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# ICONE — dal carattere di icone di Windows (Fluent su 11, MDL2 su 10): tutte
+# dello stesso disegno, al posto delle emoji che cambiano aspetto da un PC all'altro
+# ══════════════════════════════════════════════════════════════════════════
+_GLIFI = {
+    "cartella": "\ue8b7", "cartella_aperta": "\ue838", "video": "\ue714", "cestino": "\ue74d",
+    "storico": "\ue81c", "impostazioni": "\ue713", "avvia": "\ue768", "scarica": "\ue896",
+    "incolla": "\ue77f", "salva": "\ue74e", "apri": "\ue8e5", "su": "\ue70e", "giu": "\ue70d",
+    "forbici": "\ue8c6", "chiudi": "\ue711", "cerca": "\ue721", "espandi": "\ue740",
+    "indietro": "\ue892", "avanti": "\ue893",
+}
+_font_icone_trovato = []
+
+def _font_icone() -> str:
+    """Nome del carattere di icone installato ("" se non c'è: si ripiega sulle emoji)."""
+    if not _font_icone_trovato:
+        from PySide6.QtGui import QFontDatabase
+        famiglie = set(QFontDatabase.families())
+        _font_icone_trovato.append(next((f for f in ("Segoe Fluent Icons", "Segoe MDL2 Assets")
+                                         if f in famiglie), ""))
+    return _font_icone_trovato[0]
+
+def glifo(nome: str, riserva: str = "") -> str:
+    """Il carattere dell'icona, per i pulsanti di sola icona (il font lo dà lo stile); riserva = emoji."""
+    return _GLIFI[nome] if _font_icone() else riserva
+
+def icona(nome: str, colore: str = "#52606D", px: int = 16) -> QIcon:
+    """Icona da mettere accanto al testo di un pulsante; grigia quando il pulsante è spento."""
+    from PySide6.QtGui import QPainter
+    ic = QIcon()
+    if not _font_icone():
+        return ic
+    for modo, col in ((QIcon.Mode.Normal, colore), (QIcon.Mode.Disabled, "#B8C0C9")):
+        pm = QPixmap(px * 2, px * 2)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        f = QFont(_font_icone())
+        f.setPixelSize(px * 2)
+        p.setFont(f)
+        p.setPen(QColor(col))
+        p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, _GLIFI[nome])
+        p.end()
+        pm.setDevicePixelRatio(2)
+        ic.addPixmap(pm, modo)
+    return ic
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # WORKER — gira il VideoEngine in un thread separato
 # I segnali Qt garantiscono aggiornamenti thread-safe alla UI
 # ══════════════════════════════════════════════════════════════════════════
@@ -341,10 +388,10 @@ class VideoCard(QFrame):
 
         # Usiamo simboli PIENI (Solid) per le frecce e una X pesante per cancella
         # (▲, ▼, ✕ sono simboli Unicode Standard con molto corpo)
-        self.btn_up   = _icon_btn("▲", "btn_card_move", "Sposta su", not is_first and not is_running)
-        self.btn_down = _icon_btn("▼", "btn_card_move", "Sposta giù", not is_last and not is_running)
-        self.btn_cut  = _icon_btn("✂️", "btn_card_cut", "Tagli manuali", not is_running)
-        self.btn_del  = _icon_btn("✕", "btn_card_delete", "Rimuovi", not is_running)
+        self.btn_up   = _icon_btn(glifo("su", "▲"), "btn_card_move", "Sposta su", not is_first and not is_running)
+        self.btn_down = _icon_btn(glifo("giu", "▼"), "btn_card_move", "Sposta giù", not is_last and not is_running)
+        self.btn_cut  = _icon_btn(glifo("forbici", "✂"), "btn_card_cut", "Tagli manuali", not is_running)
+        self.btn_del  = _icon_btn(glifo("chiudi", "✕"), "btn_card_delete", "Rimuovi", not is_running)
 
         self.btn_up.clicked.connect(lambda: self.sig_move_up.emit(self.idx))
         self.btn_down.clicked.connect(lambda: self.sig_move_down.emit(self.idx))
@@ -358,7 +405,7 @@ class VideoCard(QFrame):
         layout.addLayout(btn_layout)
 
         # Impostazione iniziale dei testi e degli stili
-        self.txt_part.setText(f"📄 {'TXT OK' if has_txt else 'TXT ⏳' if txt_in_ricerca else 'NO TXT'}")
+        self.txt_part.setText(f"{'TXT OK' if has_txt else 'TXT ⏳' if txt_in_ricerca else 'NO TXT'}")
         # Tooltip anteprima TXT (prima dei colori: trova anche le righe ignorate)
         self._txt_ignorate = []
         self._txt_fuori_ordine = []
@@ -396,7 +443,7 @@ class VideoCard(QFrame):
             # Righe che non diventano un taglio: pillola arancione ed elenco nel tooltip
             self._txt_ignorate = righe_txt_ignorate(txt_path)
             if self._txt_ignorate:
-                self.txt_part.setText("📄 TXT OK ⚠️")
+                self.txt_part.setText("TXT OK ⚠️")
                 elenco = "\n".join(f"  · {r}" for r in self._txt_ignorate[:8])
                 if len(self._txt_ignorate) > 8:
                     elenco += f"\n  · ... e altre {len(self._txt_ignorate) - 8}"
@@ -407,7 +454,7 @@ class VideoCard(QFrame):
             # Orari doppi o che tornano indietro: può essere giusto, ma spesso è un errore
             self._txt_fuori_ordine = righe_txt_fuori_ordine(txt_path)
             if self._txt_fuori_ordine:
-                self.txt_part.setText("📄 TXT OK ⚠️")
+                self.txt_part.setText("TXT OK ⚠️")
                 elenco = "\n".join(f"  · {r}" for r in self._txt_fuori_ordine[:8])
                 if len(self._txt_fuori_ordine) > 8:
                     elenco += f"\n  · ... e altre {len(self._txt_fuori_ordine) - 8}"
@@ -423,7 +470,7 @@ class VideoCard(QFrame):
         """Aggiorna i testi e decide i colori delle due metà della pillola con palette Soft."""
         # Estraiamo la parte della data
         data_display = text.split("Data:")[-1].strip() if "Data:" in text else text
-        self.date_part.setText(f"📅 {data_display}")
+        self.date_part.setText(data_display)
         
         # Recuperiamo lo stato del TXT dal widget stesso
         has_txt = "TXT OK" in self.txt_part.text()
@@ -522,9 +569,10 @@ class SettingsDialog(QDialog):
             grp_layout.setSpacing(6)
             grp_layout.setContentsMargins(12, 8, 12, 8)
 
-            lbl_title = QLabel(title)
+            # i titoli nel codice hanno un'emoji davanti e sono in maiuscolo: si mostrano puliti
+            pulito = re.sub(r"^[^A-Za-zÀ-ÿ]+", "", title).capitalize()
+            lbl_title = QLabel(pulito)
             lbl_title.setObjectName("settings_group_title")
-            lbl_title.setStyleSheet("font-weight: bold; font-size: 11px; color: #1565C0;")
             grp_layout.addWidget(lbl_title)
 
             for label, key, tooltip in fields:
@@ -589,12 +637,12 @@ class SettingsDialog(QDialog):
         layout.addLayout(cols)
 
         # Checkbox comportamento
-        self._auto_start = QCheckBox("▶  Avvia elaborazione automaticamente dopo import da YouTube")
+        self._auto_start = QCheckBox("Avvia elaborazione automaticamente dopo import da YouTube")
         self._auto_start.setChecked(settings.get("auto_start_after_yt", False))
         self._auto_start.setToolTip("Se attivo, avvia subito l'elaborazione dopo aver importato un video da YouTube")
         layout.addWidget(self._auto_start)
 
-        self._use_master = QCheckBox("🎞  Usa il master (metodo classico, più lento)")
+        self._use_master = QCheckBox("Usa il master (metodo classico, più lento)")
         self._use_master.setChecked(settings.get("use_master", False))
         self._use_master.setToolTip(
             "Spento (default): neri e tagli vengono fatti direttamente sul video originale.\n"
@@ -606,7 +654,7 @@ class SettingsDialog(QDialog):
 
         # Bottoni
         btn_row = QHBoxLayout()
-        btn_save  = QPushButton("💾 Salva")
+        btn_save  = QPushButton("Salva")
         btn_reset = QPushButton("Ripristina default")
         btn_save.setObjectName("btn_dlg_save")
         btn_reset.setObjectName("btn_dlg_reset")
@@ -654,7 +702,7 @@ class TxtEditorDialog(QDialog):
         layout.addWidget(self._editor)
 
         btn_row = QHBoxLayout()
-        btn_save   = QPushButton("💾 Salva modifiche")
+        btn_save   = QPushButton("Salva modifiche")
         btn_cancel = QPushButton("Annulla")
         btn_save.setObjectName("btn_txt_save")
         btn_cancel.setObjectName("btn_dlg_cancel")
@@ -664,7 +712,8 @@ class TxtEditorDialog(QDialog):
         btn_row.addWidget(btn_cancel)
         if vid_name:
             # Recupera il txt dalla descrizione del video su YouTube, cercandolo per titolo
-            self._btn_cerca = QPushButton("🔎 Cerca su YouTube")
+            self._btn_cerca = QPushButton("Cerca su YouTube")
+            self._btn_cerca.setIcon(icona("cerca", "#52606D"))
             self._btn_cerca.setObjectName("btn_dlg_reset")
             self._btn_cerca.setToolTip("Cerca su YouTube il video con questo titolo e\n"
                                        "ricava il txt dai timestamp della descrizione.")
@@ -794,7 +843,7 @@ class StoricoDialog(QDialog):
     def __init__(self, storico_path: str, parent=None):
         super().__init__(parent)
         self.storico_path = storico_path
-        self.setWindowTitle("📋 Storico elaborazioni")
+        self.setWindowTitle("Storico elaborazioni")
         self.setMinimumSize(780, 480)
         self.setModal(True)
 
@@ -803,7 +852,7 @@ class StoricoDialog(QDialog):
         layout.setSpacing(10)
 
         # Titolo
-        lbl = QLabel("Storico dei video elaborati — clicca 🗑 per rimuovere una voce")
+        lbl = QLabel("Storico dei video elaborati — clicca il cestino per rimuovere una voce")
         lbl.setStyleSheet("font-size: 12px; color: grey;")
         layout.addWidget(lbl)
 
@@ -860,7 +909,8 @@ class StoricoDialog(QDialog):
             self._table.setItem(row, 3, QTableWidgetItem(str(entry.get("n_spot", ""))))
 
             # Bottone elimina riga
-            btn_del = QPushButton("🗑")
+            btn_del = QPushButton(glifo("cestino", "🗑"))
+            btn_del.setObjectName("btn_icona_rossa")
             btn_del.setFixedSize(30, 28)
             btn_del.setToolTip("Rimuovi dal storico")
             btn_del.clicked.connect(lambda checked, v=vid: self._delete_entry(v))
@@ -916,7 +966,7 @@ class BlackdetectDialog(QDialog):
         left = QVBoxLayout()
         left.setSpacing(8)
 
-        lbl_neri = QLabel("🕳️ Neri trovati — clicca per inserire")
+        lbl_neri = QLabel("Neri trovati — clicca per inserire")
         lbl_neri.setStyleSheet("font-weight: bold; font-size: 12px;")
         left.addWidget(lbl_neri)
 
@@ -948,7 +998,7 @@ class BlackdetectDialog(QDialog):
         right = QVBoxLayout()
         right.setSpacing(8)
 
-        lbl_editor = QLabel("📄 Editor TXT — scrivi il nome dopo il timestamp")
+        lbl_editor = QLabel("Editor TXT — scrivi il nome dopo il timestamp")
         lbl_editor.setStyleSheet("font-weight: bold; font-size: 12px;")
         right.addWidget(lbl_editor)
 
@@ -981,9 +1031,10 @@ class BlackdetectDialog(QDialog):
         self._lbl_nomi = QLabel("")
         self._lbl_nomi.setWordWrap(True)
         self._lbl_nomi.setStyleSheet("font-size: 11px;")
-        self._btn_indietro = QPushButton("⏮")
+        self._btn_indietro = QPushButton(glifo("indietro", "⏮"))
+        self._btn_indietro.setObjectName("btn_icona")
         self._btn_indietro.setToolTip("Torna al nome precedente della lista")
-        self._btn_salta = QPushButton("⏭ Salta nome")
+        self._btn_salta = QPushButton("Salta nome")
         self._btn_salta.setToolTip("Salta il prossimo nome della lista\n"
                                    "(es. uno spot attaccato al precedente, senza nero)")
         self._btn_indietro.clicked.connect(lambda: self._sposta_nome(-1))
@@ -999,8 +1050,9 @@ class BlackdetectDialog(QDialog):
         self.finished.connect(self._chiudi_anteprima)
 
         btn_row = QHBoxLayout()
-        btn_save   = QPushButton("💾 Salva TXT")
-        btn_open   = QPushButton("▶ Apri video")
+        btn_save   = QPushButton("Salva txt")
+        btn_open   = QPushButton("Apri video")
+        btn_open.setIcon(icona("avvia", "#1D3B53"))
         btn_cancel = QPushButton("Annulla")
         btn_save.setObjectName("btn_txt_save")
         btn_cancel.setObjectName("btn_dlg_cancel")
@@ -1153,7 +1205,8 @@ class BlackdetectDialog(QDialog):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             # Cattura ts_str per valore nel lambda
             btn.clicked.connect(lambda checked, t=ts_str: self._insert_timestamp(t))
-            btn_play = QPushButton("▶")
+            btn_play = QPushButton(glifo("avvia", "▶"))
+            btn_play.setObjectName("btn_icona")
             btn_play.setFixedWidth(30)
             btn_play.setToolTip("Guarda qualche secondo intorno a questo nero")
             btn_play.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1164,8 +1217,8 @@ class BlackdetectDialog(QDialog):
             self._neri.append((int(ts), btn))
         self._aggiorna_neri_usati()
 
-    _STILE_NERO = ("text-align: left; padding: 4px 8px; border-radius: 4px; "
-                   "font-family: 'Consolas', monospace; ")
+    _STILE_NERO = ("text-align: left; padding: 4px 8px; border-radius: 6px; min-width: 0px; "
+                   "font-weight: 400; font-family: 'Cascadia Mono', 'Consolas', monospace; ")
 
     def _aggiorna_neri_usati(self):
         """I neri già scritti nell'editor diventano grigi, così si vede a che punto si è."""
@@ -1173,11 +1226,11 @@ class BlackdetectDialog(QDialog):
                  re.findall(r"^\s*(\d{1,2}:\d{2}(?::\d{2})?)", self._editor.toPlainText(), re.M)}
         for sec, btn in self._neri:
             if sec in usati:
-                btn.setStyleSheet(self._STILE_NERO + "background: #EEEEEE; color: #9E9E9E; "
-                                  "border: 1px solid #E0E0E0;")
+                btn.setStyleSheet(self._STILE_NERO + "background: #F5F6F8; color: #B8C0C9; "
+                                  "border: 1px solid #E4E7EB;")
             else:
-                btn.setStyleSheet(self._STILE_NERO + "background: #E3F2FD; "
-                                  "border: 1px solid #90CAF9;")
+                btn.setStyleSheet(self._STILE_NERO + "background: #EEF2F6; color: #1D3B53; "
+                                  "border: 1px solid #DCE3EA;")
 
     def _anteprima_nero(self, ts: float, ts_str: str):
         """Mostra con ffplay 5 secondi intorno al nero (2 prima, 3 dopo), in una finestrella."""
@@ -1585,7 +1638,7 @@ class SpotCutterApp(QMainWindow):
             self.work_dir = d
             self.state["work_dir"] = d
             # Aggiorna il testo del bottone per mostrare la nuova cartella
-            self._btn_work_dir.setText(f"📂  {os.path.basename(d) if os.path.basename(d) else d}")
+            self._btn_work_dir.setText(f"  {os.path.basename(d) if os.path.basename(d) else d}")
             self._on_log(f"Cartella destinazione cambiata in: {d}", "cyan")
             self.settings_storage.setValue("work_dir", d)
 
@@ -1739,7 +1792,7 @@ class SpotCutterApp(QMainWindow):
             self._btn_paste.setText("\ue77f") # Segoe Fluent (Win 11)
             self._btn_paste.setFont(QFont("Segoe Fluent Icons", 12))
         else:
-            self._btn_paste.setText("📋") # Fallback Emoji (Win 10 / Altri)
+            self._btn_paste.setText(glifo("incolla", "📋"))
             self._btn_paste.setFont(QFont("Segoe UI Emoji", 12))
 
         yt_input_layout.addWidget(self._yt_entry)
@@ -1768,7 +1821,7 @@ class SpotCutterApp(QMainWindow):
             self._btn_dl.setText("\ue896") # Icona Download Win11
             self._btn_dl.setFont(QFont("Segoe Fluent Icons", 11))
         else:
-            self._btn_dl.setText("⬇️")
+            self._btn_dl.setText(glifo("scarica", "⬇"))
 
         pill_layout.addWidget(self._btn_yt)
         pill_layout.addWidget(self._btn_dl)
@@ -1785,15 +1838,15 @@ class SpotCutterApp(QMainWindow):
         layout.addWidget(lbl_local)
 
         # Bottoni file
-        btn_folder = self._make_btn("📁  Sfoglia cartella", "btn_folder")
+        btn_folder = self._make_btn("Sfoglia cartella", "btn_folder", ico="cartella", colore="#1D3B53")
         btn_folder.clicked.connect(self._on_browse_folder)
         layout.addWidget(btn_folder)
 
-        btn_files = self._make_btn("🎬  Aggiungi video", "btn_files")
+        btn_files = self._make_btn("Aggiungi video", "btn_files", ico="video", colore="#1D3B53")
         btn_files.clicked.connect(self._on_add_files)
         layout.addWidget(btn_files)
 
-        self._btn_clear = self._make_btn("🗑  Svuota coda", "btn_clear")
+        self._btn_clear = self._make_btn("Svuota coda", "btn_clear", ico="cestino")
         self._btn_clear.setEnabled(False)
         self._btn_clear.clicked.connect(self._on_clear_queue)
         layout.addWidget(self._btn_clear)
@@ -1807,17 +1860,17 @@ class SpotCutterApp(QMainWindow):
         lbl_folder.setObjectName("lbl_section")
         layout.addWidget(lbl_folder)
 
-        self._btn_work_dir = self._make_btn("📂  Libreria Spot", "btn_work_dir", h=40)
+        self._btn_work_dir = self._make_btn("Libreria Spot", "btn_work_dir", h=36, ico="cartella_aperta")
         self._btn_work_dir.setToolTip("Cambia la cartella dove verranno salvati i tagli")
         self._btn_work_dir.clicked.connect(self._on_choose_work_dir)
         layout.addWidget(self._btn_work_dir)
 
-        btn_storico = self._make_btn("📋  Storico elaborazioni", "btn_storico", h=36)
+        btn_storico = self._make_btn("Storico elaborazioni", "btn_storico", h=36, ico="storico")
         btn_storico.setToolTip("Visualizza e gestisci lo storico dei video elaborati")
         btn_storico.clicked.connect(self._on_open_storico)
         layout.addWidget(btn_storico)
 
-        btn_settings = self._make_btn("⚙️  Impostazioni", "btn_settings", h=36)
+        btn_settings = self._make_btn("Impostazioni", "btn_settings", h=36, ico="impostazioni")
         btn_settings.setToolTip("Impostazioni Avanzate")
         btn_settings.clicked.connect(self._open_settings)
         layout.addWidget(btn_settings)
@@ -1825,23 +1878,26 @@ class SpotCutterApp(QMainWindow):
         layout.addStretch()
 
         # AVVIA / STOP
-        self._btn_run = self._make_btn("▶  Avvia", "btn_run", h=55)
+        self._btn_run = self._make_btn("Avvia", "btn_run", h=55, ico="avvia", colore="#FFFFFF")
         self._btn_run.setEnabled(False)
         self._btn_run.clicked.connect(lambda: self._on_run())
         layout.addWidget(self._btn_run)
 
-        self._btn_stop = self._make_btn("⏹  Stop", "btn_stop", h=45)
+        self._btn_stop = self._make_btn("Stop", "btn_stop", h=45)
         self._btn_stop.clicked.connect(self._on_stop)
         self._btn_stop.hide()
         layout.addWidget(self._btn_stop)
 
         parent_layout.addWidget(sb)
 
-    def _make_btn(self, text, obj_name, h=40):
+    def _make_btn(self, text, obj_name, h=40, ico=None, colore="#52606D"):
         """Crea un bottone sidebar — lo stile è definito nel QSS tramite objectName."""
-        btn = QPushButton(text)
+        btn = QPushButton(("  " + text) if ico else text)
         btn.setObjectName(obj_name)
         btn.setFixedHeight(h)
+        if ico:
+            btn.setIcon(icona(ico, colore))
+            btn.setIconSize(QSize(16, 16))
         return btn
 
     # ── Area principale ────────────────────────────────────────────────────
@@ -1856,7 +1912,8 @@ class SpotCutterApp(QMainWindow):
         stats_bar = QWidget()
         stats_bar.setObjectName("stats_bar")
         stats_layout = QHBoxLayout(stats_bar)
-        stats_layout.setContentsMargins(15, 8, 15, 8)
+        stats_layout.setContentsMargins(16, 8, 16, 8)
+        stats_layout.setSpacing(20)
         
         self._main_stat_labels = {}
         # Definiamo le icone per ogni categoria
@@ -1871,14 +1928,8 @@ class SpotCutterApp(QMainWindow):
             "telegiornali":"Frammenti di telegiornale",
         }
 
-        cats = [
-            ("spot", "📺 Spot"), ("promo", "📣 Promo"), ("bumper", "🎬 Bumper"),
-            ("annunci", "🎤 Annunci"), ("natale", "🎄 Natale"),
-            ("cartelli", "🖼️ Cartelli"), ("videosigle", "🎵 Sigle"), ("telegiornali", "📰 TG")
-        ]
-        
-        for key, label_text in cats:
-            lbl = QLabel(f"{label_text}: 0")
+        for key, label_text in self._NOMI_CONTATORI.items():
+            lbl = QLabel(self._testo_contatore(label_text, 0))
             lbl.setObjectName(f"lbl_stat_{key}")
             lbl.setToolTip(tooltips.get(key, ""))
             stats_layout.addWidget(lbl)
@@ -1897,8 +1948,8 @@ class SpotCutterApp(QMainWindow):
         toolbar.addWidget(lbl_sessione)
 
         # Pillola doppia salva/carica
-        btn_save_session = QPushButton("💾")
-        btn_load_session = QPushButton("📂")
+        btn_save_session = QPushButton(glifo("salva", "💾"))
+        btn_load_session = QPushButton(glifo("apri", "📂"))
         btn_save_session.setObjectName("btn_pill_left")
         btn_load_session.setObjectName("btn_pill_right")
         btn_save_session.setFixedSize(32, 28)
@@ -1938,7 +1989,8 @@ class SpotCutterApp(QMainWindow):
         sep_txt.setObjectName("separator")
         toolbar.addWidget(sep_txt)
 
-        self._btn_cerca_txt = QPushButton("🔎 Cerca txt mancanti")
+        self._btn_cerca_txt = QPushButton(" Cerca txt mancanti")
+        self._btn_cerca_txt.setIcon(icona("cerca"))
         self._btn_cerca_txt.setObjectName("btn_sort")
         self._btn_cerca_txt.setFixedHeight(28)
         self._btn_cerca_txt.setToolTip("Per ogni video in coda senza txt cerca su YouTube il video\n"
@@ -2007,7 +2059,7 @@ class SpotCutterApp(QMainWindow):
         log_header = QHBoxLayout()
         lbl_log = QLabel("Log")
         lbl_log.setObjectName("lbl_progress")
-        btn_expand_log = QPushButton("⛶")
+        btn_expand_log = QPushButton(glifo("espandi", "⛶"))
         btn_expand_log.setObjectName("btn_expand_log")
         btn_expand_log.setFixedSize(22, 22)
         btn_expand_log.setToolTip("Espandi/riduci log")
@@ -2168,9 +2220,9 @@ class SpotCutterApp(QMainWindow):
         can_start = pronti > 0 and not running
         if not running:
             if non_pronti and pronti:
-                self._btn_run.setText(f"▶  Avvia ({pronti} di {len(queue)})")
+                self._btn_run.setText(f"  Avvia ({pronti} di {len(queue)})")
             else:
-                self._btn_run.setText("▶  Avvia")
+                self._btn_run.setText("  Avvia")
             if non_pronti:
                 elenco = "\n".join(f"  · {v[:60]} — {m}" for v, m in non_pronti[:8])
                 if len(non_pronti) > 8:
@@ -2248,26 +2300,26 @@ class SpotCutterApp(QMainWindow):
         if card and isinstance(card, VideoCard):
             card.set_status(status, color)
 
+    _NOMI_CONTATORI = {"spot": "Spot", "promo": "Promo", "bumper": "Bumper", "annunci": "Annunci",
+                       "natale": "Natale", "cartelli": "Cartelli", "videosigle": "Sigle",
+                       "telegiornali": "TG"}
+
+    @staticmethod
+    def _testo_contatore(nome: str, n: int) -> str:
+        """Nome in grigio e numero nel colore della categoria (quello dell'etichetta, dallo stile)."""
+        return f'<span style="color:#52606D; font-weight:400">{nome}</span>&nbsp;&nbsp;<b>{n}</b>'
+
     @Slot()
     def _on_stats_update(self):
         """Aggiorna i contatori delle statistiche nell'interfaccia"""
         # Definiamo i nomi visualizzati con le icone (coerenti con _build_main_area)
-        display_names = {
-            "spot": "📺 Spot",
-            "promo": "📣 Promo",
-            "bumper": "🎬 Bumper",
-            "annunci": "🎤 Annunci",
-            "natale": "🎄 Natale",
-            "cartelli": "🖼️ Cartelli",
-            "videosigle": "🎵 Sigle",
-            "telegiornali": "📰 TG"
-        }
+        display_names = self._NOMI_CONTATORI
 
         # Aggiorna solo le etichette dell'area principale
         for key, lbl in self._main_stat_labels.items():
             n = self.state["stats_counts"].get(key, 0)
             label_text = display_names.get(key, key.capitalize())
-            lbl.setText(f"{label_text}: {n}")
+            lbl.setText(self._testo_contatore(label_text, n))
 
     @Slot(bool, float)
     def _on_finished(self, successo: bool, elapsed: float):
@@ -2339,7 +2391,7 @@ class SpotCutterApp(QMainWindow):
         
         msg_box.setText(testo_box)
         
-        btn_open = msg_box.addButton("📂 Apri Cartella", QMessageBox.ButtonRole.ActionRole)
+        btn_open = msg_box.addButton("Apri cartella", QMessageBox.ButtonRole.ActionRole)
         btn_ok = msg_box.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
         
         msg_box.exec()
@@ -2414,7 +2466,7 @@ class SpotCutterApp(QMainWindow):
             msg.setText("<b>Video scaricato con successo!</b>")
             msg.setInformativeText(f"File: {vid_basename}\n\nIl file è disponibile nella cartella di destinazione.")
 
-            btn_open = msg.addButton("📂 Apri Cartella", QMessageBox.ButtonRole.AcceptRole)
+            btn_open = msg.addButton("Apri cartella", QMessageBox.ButtonRole.AcceptRole)
             msg.addButton("Chiudi", QMessageBox.ButtonRole.RejectRole)
 
             msg.exec()
@@ -2754,7 +2806,7 @@ class SpotCutterApp(QMainWindow):
             return
         self._on_log(f"🔎 Ricerca su YouTube dei txt mancanti: {len(mancanti)} video...", "cyan")
         self._btn_cerca_txt.setEnabled(False)
-        self._btn_cerca_txt.setText(f"🔎 Ricerca 0/{len(mancanti)}...")
+        self._btn_cerca_txt.setText(f" Ricerca 0/{len(mancanti)}...")
         # La cartella si fissa ora: i txt vanno accanto a questi video anche se nel frattempo
         # ne viene caricata un'altra
         self._cerca_txt_stato = {"totale": len(mancanti), "fatti": 0, "trovati": 0,
@@ -2873,7 +2925,7 @@ class SpotCutterApp(QMainWindow):
     def _on_txt_trovato(self, vid: str, r: dict):
         st = self._cerca_txt_stato
         st["fatti"] += 1
-        self._btn_cerca_txt.setText(f"🔎 Ricerca {st['fatti']}/{st['totale']}...")
+        self._btn_cerca_txt.setText(f" Ricerca {st['fatti']}/{st['totale']}...")
         if self._salva_txt_trovato(vid, r, st["cartella"]):
             st["trovati"] += 1
 
@@ -2906,7 +2958,7 @@ class SpotCutterApp(QMainWindow):
     def _on_cerca_txt_finita(self):
         st = self._cerca_txt_stato
         self._btn_cerca_txt.setEnabled(True)
-        self._btn_cerca_txt.setText("🔎 Cerca txt mancanti")
+        self._btn_cerca_txt.setText(" Cerca txt mancanti")
         self._on_log(f"🔎 Ricerca txt finita: {st['trovati']} trovati su {st['totale']}.",
                      "green" if st["trovati"] == st["totale"] else "orange")
         self.render_queue()

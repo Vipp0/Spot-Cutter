@@ -5,6 +5,21 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.4.0
+
+### 🎨 Nuova grafica / New look
+
+- 🇮🇹 **Interfaccia ridisegnata** — stessi comandi negli stessi posti, aspetto nuovo. I colori vengono dal logo: blu notte per gli elementi importanti (importazione, barra del video in corso, pannello del log) e arancione usato una volta sola, per il pulsante Avvia e l'avanzamento totale. I pulsanti secondari sono tenui e le voci di servizio (Svuota coda, Libreria, Storico, Impostazioni) sono righe leggere; le scritte non sono più in maiuscolo
+- 🇬🇧 **Redesigned interface** — same controls in the same places, new look. The colours come from the logo: night blue for the important elements (import, current video bar, log panel) and orange used only once, for the Start button and the total progress. Secondary buttons are soft and service entries (Clear queue, Library, History, Settings) are light rows; labels are no longer in capitals
+
+- 🇮🇹 **Icone uniformi al posto delle emoji** — pulsanti, card e barra della coda usano le icone di sistema di Windows, tutte dello stesso disegno; i pulsanti delle card si colorano solo al passaggio del mouse. Le pillole di txt e data hanno un fondo chiaro con il testo scuro dello stesso colore (verde, arancione, rosso e grigio-azzurro mantengono il loro significato) e i contatori in alto mostrano il nome in grigio e il numero nel colore della categoria, leggibile su bianco
+- 🇬🇧 **Consistent icons instead of emoji** — buttons, cards and the queue bar use the Windows system icons, all in the same style; card buttons take colour only on hover. The txt and date pills have a light background with dark text of the same colour (green, orange, red and grey-blue keep their meaning) and the counters at the top show the name in grey and the number in the category colour, readable on white
+
+- 🇮🇹 **Finestre secondarie** — impostazioni, editor del txt, data, storico, tagli manuali e finestre di messaggio seguono lo stesso stile: un pulsante principale blu notte per finestra, gli altri tenui
+- 🇬🇧 **Secondary windows** — settings, txt editor, date, history, manual cuts and message boxes follow the same style: one night-blue main button per window, the others soft
+
+---
+
 ## 🎬 Spot Cutter 1.3.11
 
 ### ✨ Nuove funzionalità / New features

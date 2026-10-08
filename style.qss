@@ -667,3 +667,43 @@ QPushButton#btn_sort:disabled {
     color: #B8C0C9;
     border-color: #E4E7EB;
 }
+
+/* ── PULSANTI DI SOLA ICONA ─────────────────────────────────────────────── */
+/* Il disegno viene dal carattere di icone di Windows: il colore segue lo stile */
+QPushButton#btn_card_move,
+QPushButton#btn_card_cut,
+QPushButton#btn_card_delete,
+QPushButton#btn_pill_left,
+QPushButton#btn_pill_right,
+QPushButton#btn_expand_log,
+QPushButton#btn_icona,
+QPushButton#btn_icona_rossa {
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol";
+    font-weight: 400;
+}
+
+QDialog QPushButton#btn_icona,
+QDialog QPushButton#btn_icona_rossa {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #52606D;
+    font-size: 13px;
+    padding: 0px;
+    min-width: 0px;
+}
+QDialog QPushButton#btn_icona:hover {
+    background-color: #EEF2F6;
+    color: #1D3B53;
+    border: 1px solid #DCE3EA;
+}
+QDialog QPushButton#btn_icona_rossa:hover {
+    background-color: #FCEBEA;
+    color: #B3261E;
+    border: 1px solid #F3C9C6;
+}
+
+QProgressBar::chunk {
+    background-color: #1D3B53;
+    border-radius: 3px;
+}
