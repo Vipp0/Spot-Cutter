@@ -592,7 +592,10 @@ class VideoEngine:
                             f"{tagli_riusciti} tagli"
                         )
                     completati += 1
-                    righe_dubbi = self._clip_da_controllare(spot_list, dubbi)
+                    # dove è finito ogni clip, per ritrovarlo dall'elenco salvato su file
+                    percorsi = {job["idx_spot"] - 1: os.path.relpath(job["out_f"], base_libreria)
+                                for job in cut_jobs if os.path.exists(job["out_f"])}
+                    righe_dubbi = self._clip_da_controllare(spot_list, dubbi, percorsi)
                     if righe_dubbi:
                         dubbi_sessione.append((vid, righe_dubbi))
 
@@ -619,18 +622,32 @@ class VideoEngine:
                            f"(per ognuno, il punto da guardare):", "orange")
             for vid, righe in dubbi_sessione:
                 await self.log(f"  {os.path.splitext(vid)[0]}", "white")
-                for riga, stimato in righe:
+                for riga, stimato, _ in righe:
                     await self.log(f"     {riga}", "red" if stimato else "orange")
+            # Lo stesso elenco resta in un file nella libreria, da spuntare con calma: ogni
+            # elaborazione si aggiunge in fondo, con la sua data
+            file_elenco = os.path.join(state.get("work_dir", state["current_dir"]), "Da controllare.txt")
+            try:
+                with open(file_elenco, "a", encoding="utf-8-sig" if not os.path.exists(file_elenco) else "utf-8") as f:
+                    f.write(f"===== Elaborazione del {time.strftime('%d-%m-%Y %H:%M')} — {n} clip da controllare =====\n")
+                    for vid, righe in dubbi_sessione:
+                        f.write(f"\n{os.path.splitext(vid)[0]}\n")
+                        for riga, _, percorso in righe:
+                            f.write(f"  [ ] {riga}\n" + (f"        {percorso}\n" if percorso else ""))
+                    f.write("\n")
+                await self.log(f"📝 Elenco salvato anche in: {file_elenco}", "cyan")
+            except OSError as e:
+                await self.log(f"⚠️ Impossibile salvare l'elenco in {file_elenco}: {e}", "orange")
             await self.log("─" * 40, "grey")
 
         return state.get("running", True)
     
     @staticmethod
-    def _clip_da_controllare(spot_list, dubbi) -> list:
+    def _clip_da_controllare(spot_list, dubbi, percorsi=None) -> list:
         """
         Dai clip con un estremo tagliato senza nero, le righe per l'elenco di fine lavoro:
-        [("03:05  Spot Ford Escort — inizio e fine", c'è un punto stimato?)]. I bumper non si
-        elencano (contano gli spot), a meno che un loro estremo sia solo stimato.
+        [("03:05  Spot Ford Escort — inizio e fine", c'è un punto stimato?, file del clip)].
+        I bumper non si elencano (contano gli spot), a meno che un loro estremo sia solo stimato.
         """
         righe = []
         for i in sorted(dubbi):
@@ -642,7 +659,8 @@ class VideoEngine:
             t = int(spot_list[i]["t"])
             cosa = " e ".join(lato + (" (punto solo stimato)" if lati[lato] else "")
                               for lato in ("inizio", "fine") if lato in lati)
-            righe.append((f"{t // 60:02d}:{t % 60:02d}  {nome} — {cosa}", stimato))
+            righe.append((f"{t // 60:02d}:{t % 60:02d}  {nome} — {cosa}", stimato,
+                          (percorsi or {}).get(i, "")))
         return righe
 
     @staticmethod
