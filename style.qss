@@ -777,3 +777,97 @@ QLabel#card_info {
     color: #52606D;
     font-size: 12px;
 }
+
+/* ── INTESTAZIONE DELLA CODA ────────────────────────────────────────────── */
+QLabel#titolo_coda {
+    color: #1D3B53;
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'Segoe UI Variable Display', 'Segoe UI';
+}
+QLabel#lbl_riepilogo {
+    color: #52606D;
+    font-size: 13px;
+}
+
+/* Filtri per stato: pastiglie, quella scelta è blu notte */
+QPushButton#btn_filtro {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD2D9;
+    color: #52606D;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 14px;
+    padding: 0 14px;
+}
+QPushButton#btn_filtro:hover {
+    background-color: #F0F3F6;
+    color: #1F2933;
+}
+QPushButton#btn_filtro:checked {
+    background-color: #1D3B53;
+    color: #FFFFFF;
+    border-color: #1D3B53;
+}
+
+/* Ricerca dei txt mancanti: compare solo quando serve, come un collegamento */
+QPushButton#btn_cerca_txt {
+    background-color: #FDEBCF;
+    border: 1px solid #F3D7A6;
+    color: #8A5200;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 14px;
+    padding: 0 14px;
+}
+QPushButton#btn_cerca_txt:hover {
+    background-color: #FAE0B4;
+}
+QPushButton#btn_cerca_txt:disabled {
+    background-color: #E6EBF0;
+    border-color: #D5DAE0;
+    color: #4A5D6E;
+}
+
+QPushButton#btn_altro {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD2D9;
+    color: #52606D;
+    border-radius: 8px;
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol";
+    font-size: 14px;
+}
+QPushButton#btn_altro:hover {
+    background-color: #F0F3F6;
+    color: #1F2933;
+}
+QPushButton#btn_altro::menu-indicator { image: none; width: 0px; }
+QPushButton#btn_sort::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    right: 8px;
+}
+QPushButton#btn_sort { padding: 0 24px 0 12px; }
+
+QMenu {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD2D9;
+    border-radius: 8px;
+    padding: 6px;
+}
+QMenu::item {
+    color: #1F2933;
+    font-size: 13px;
+    padding: 7px 18px 7px 12px;
+    border-radius: 6px;
+}
+QMenu::item:selected {
+    background-color: #EEF2F6;
+    color: #1D3B53;
+}
+
+/* Contatori dei clip creati, nel pannello in basso */
+QFrame#console QLabel#lbl_stat_console {
+    color: #FFFFFF;
+    font-size: 12px;
+}

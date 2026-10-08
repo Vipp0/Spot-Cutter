@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QTextEdit, QScrollArea,
     QFrame, QSizePolicy, QDialog, QDialogButtonBox, QFileDialog,
     QMessageBox, QProgressBar, QSplitter, QStyle, QPlainTextEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QMenu
 )
 from PySide6.QtCore import (
     Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings,
@@ -70,7 +70,7 @@ _GLIFI = {
     "storico": "\ue81c", "impostazioni": "\ue713", "avvia": "\ue768", "scarica": "\ue896",
     "incolla": "\ue77f", "salva": "\ue74e", "apri": "\ue8e5", "su": "\ue70e", "giu": "\ue70d",
     "forbici": "\ue8c6", "chiudi": "\ue711", "cerca": "\ue721", "espandi": "\ue740",
-    "indietro": "\ue892", "avanti": "\ue893",
+    "indietro": "\ue892", "avanti": "\ue893", "altro": "\ue712",
 }
 _font_icone_trovato = []
 
@@ -1478,9 +1478,9 @@ class SpotCutterApp(QMainWindow):
         queue = self.state.get("queue_files", [])
         current_dir = self.state.get("current_dir", "")
         if not queue:
-            self._lbl_duration.setText("—")
+            self._lbl_duration.setText("Nessun video")
             return
-        self._lbl_duration.setText("calcolo...")
+        self._lbl_duration.setText(f"{len(queue)} video · calcolo della durata…")
 
         def _worker():
             total = 0.0
@@ -1554,16 +1554,7 @@ class SpotCutterApp(QMainWindow):
             self._sort_key = key
             self._sort_asc = True
 
-        # Aggiorna aspetto bottoni
-        for k in ["nome", "data", "stato"]:
-            btn = getattr(self, f"_btn_sort_{k}", None)
-            if btn:
-                btn.setChecked(k == self._sort_key)
-                if k == self._sort_key:
-                    arrow = " ↑" if self._sort_asc else " ↓"
-                    btn.setText(k.capitalize() + arrow)
-                else:
-                    btn.setText(k.capitalize())
+        self._btn_ordina.setText(f"Ordina: {key} {'↑' if self._sort_asc else '↓'}")
 
         # Ordina queue_files
         queue = self.state.get("queue_files", [])
@@ -1682,13 +1673,25 @@ class SpotCutterApp(QMainWindow):
                 if n:
                     cartella = session.get("current_dir", "")
                     dove = f" dalla cartella\n{cartella}" if cartella else ""
-                    risposta = QMessageBox.question(
-                        self, "Riprendere la coda?",
-                        f"L'ultima volta erano in coda {n} video{dove}.\n\nVuoi riprendere da lì?")
-                    if risposta == QMessageBox.StandardButton.Yes:
+                    box = QMessageBox(self)
+                    box.setWindowTitle("Riprendere la coda?")
+                    box.setIcon(QMessageBox.Icon.Question)
+                    box.setText(f"L'ultima volta erano in coda {n} video{dove}.\n\nVuoi riprendere da lì?\n\n"
+                                "«Non ora» lascia la coda da parte e te lo richiede al prossimo avvio.\n"
+                                "«Scarta la coda» la dimentica e non te lo chiede più "
+                                "(i video restano dove sono).")
+                    btn_si = box.addButton("Riprendi", QMessageBox.ButtonRole.YesRole)
+                    box.addButton("Non ora", QMessageBox.ButtonRole.NoRole)
+                    btn_scarta = box.addButton("Scarta la coda", QMessageBox.ButtonRole.DestructiveRole)
+                    box.setDefaultButton(btn_si)
+                    box.exec()
+                    if box.clickedButton() is btn_si:
                         self._sessione_auto_pronta = True
                         self._applica_sessione(session)
                         self._on_log(f"📂 Coda dell'ultima volta ripresa: {n} video.", "green")
+                    elif box.clickedButton() is btn_scarta:
+                        os.remove(path)
+                        self._on_log(f"🗑 Coda dell'ultima volta scartata ({n} video): non verrà più proposta.", "grey")
         except (OSError, ValueError):
             pass
         finally:
@@ -1981,111 +1984,70 @@ class SpotCutterApp(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
 
-        # Statistiche (Ora più carine con icone)
-        stats_bar = QWidget()
-        stats_bar.setObjectName("stats_bar")
-        stats_layout = QHBoxLayout(stats_bar)
-        stats_layout.setContentsMargins(16, 8, 16, 8)
-        stats_layout.setSpacing(20)
-        
-        self._main_stat_labels = {}
-        # Definiamo le icone per ogni categoria
-        tooltips = {
-            "spot":        "Spot pubblicitari generici",
-            "promo":       "Promo e trailer di programmi TV",
-            "bumper":      "Bumper — brevi stacchetti tra gli spot",
-            "annunci":     "Annunci di palinsesto e comunicati",
-            "natale":      "Spot e contenuti festivi (Natale, Capodanno...)",
-            "cartelli":    "Cartelli e schermate fisse",
-            "videosigle":  "Sigle dei contenitori cinematografici TV\n(es. Lunedì Cinema, I Filmissimi, I Bellissimi...)",
-            "telegiornali":"Frammenti di telegiornale",
-        }
+        # Intestazione della coda: titolo e riepilogo a sinistra, ordinamento e menu a destra
+        testata = QHBoxLayout()
+        testata.setSpacing(8)
+        col_titolo = QVBoxLayout()
+        col_titolo.setSpacing(0)
+        lbl_coda = QLabel("Coda")
+        lbl_coda.setObjectName("titolo_coda")
+        self._lbl_duration = QLabel("Nessun video")
+        self._lbl_duration.setObjectName("lbl_riepilogo")
+        self._lbl_duration.setToolTip("Durata totale dei video in coda e tempo di lavoro stimato.\n"
+                                      "La stima usa la velocità misurata su questo computer nelle\n"
+                                      "elaborazioni già fatte: compare dopo la prima.")
+        col_titolo.addWidget(lbl_coda)
+        col_titolo.addWidget(self._lbl_duration)
+        testata.addLayout(col_titolo, stretch=1)
 
-        for key, label_text in self._NOMI_CONTATORI.items():
-            lbl = QLabel(self._testo_contatore(label_text, 0))
-            lbl.setObjectName(f"lbl_stat_{key}")
-            lbl.setToolTip(tooltips.get(key, ""))
-            stats_layout.addWidget(lbl)
-            self._main_stat_labels[key] = lbl
-            
-        stats_layout.addStretch()
-        layout.addWidget(stats_bar)
+        self._btn_ordina = QPushButton("Ordina")
+        self._btn_ordina.setObjectName("btn_sort")
+        self._btn_ordina.setFixedHeight(30)
+        menu_ordina = QMenu(self._btn_ordina)
+        for key, label in [("nome", "Per nome"), ("data", "Per data"), ("stato", "Per stato (senza txt prima)")]:
+            menu_ordina.addAction(label, lambda k=key: self._on_sort(k))
+        self._btn_ordina.setMenu(menu_ordina)
+        self._btn_ordina.setToolTip("Ordina la coda. Scegliendo di nuovo la stessa voce si inverte l'ordine.")
+        testata.addWidget(self._btn_ordina, alignment=Qt.AlignmentFlag.AlignBottom)
 
-# Barra unificata: sessione + ordinamento + durata
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        btn_altro = QPushButton(glifo("altro", "⋯"))
+        btn_altro.setObjectName("btn_altro")
+        btn_altro.setFixedSize(34, 30)
+        btn_altro.setToolTip("Sessione: salva o carica una coda")
+        menu_altro = QMenu(btn_altro)
+        menu_altro.addAction("Salva la coda in un file…", self._on_save_session)
+        menu_altro.addAction("Carica una coda da un file…", self._on_load_session)
+        btn_altro.setMenu(menu_altro)
+        testata.addWidget(btn_altro, alignment=Qt.AlignmentFlag.AlignBottom)
+        layout.addLayout(testata)
 
-        # Etichetta SESSIONE
-        lbl_sessione = QLabel("Sessione")
-        lbl_sessione.setObjectName("lbl_section")
-        toolbar.addWidget(lbl_sessione)
-
-        # Pillola doppia salva/carica
-        btn_save_session = QPushButton(glifo("salva", "💾"))
-        btn_load_session = QPushButton(glifo("apri", "📂"))
-        btn_save_session.setObjectName("btn_pill_left")
-        btn_load_session.setObjectName("btn_pill_right")
-        btn_save_session.setFixedSize(32, 28)
-        btn_load_session.setFixedSize(32, 28)
-        btn_save_session.setToolTip("Salva sessione")
-        btn_load_session.setToolTip("Carica sessione")
-        btn_save_session.clicked.connect(self._on_save_session)
-        btn_load_session.clicked.connect(self._on_load_session)
-        pill = QHBoxLayout()
-        pill.setSpacing(0)
-        pill.setContentsMargins(0, 0, 0, 0)
-        pill.addWidget(btn_save_session)
-        pill.addWidget(btn_load_session)
-        toolbar.addLayout(pill)
-
-        # Separatore verticale
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setObjectName("separator")
-        toolbar.addWidget(sep)
-
-        # Ordinamento
-        lbl_sort = QLabel("Ordina:")
-        lbl_sort.setObjectName("lbl_duration")
-        toolbar.addWidget(lbl_sort)
-        for key, label in [("nome", "Nome"), ("data", "Data"), ("stato", "Stato")]:
-            btn = QPushButton(label)
-            btn.setObjectName("btn_sort")
+        # Filtri per stato a sinistra; a destra, solo se serve, la ricerca dei txt mancanti
+        riga_filtri = QHBoxLayout()
+        riga_filtri.setSpacing(6)
+        self._filtro = "tutti"
+        self._btn_filtri = {}
+        for key in ("tutti", "pronti", "sistemare"):
+            btn = QPushButton()
+            btn.setObjectName("btn_filtro")
             btn.setFixedHeight(28)
             btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, k=key: self._on_sort(k))
-            setattr(self, f"_btn_sort_{key}", btn)
-            toolbar.addWidget(btn)
-
-        sep_txt = QFrame()
-        sep_txt.setFrameShape(QFrame.Shape.VLine)
-        sep_txt.setObjectName("separator")
-        toolbar.addWidget(sep_txt)
+            btn.setChecked(key == "tutti")
+            btn.clicked.connect(lambda checked, k=key: self._on_filtro(k))
+            self._btn_filtri[key] = btn
+            riga_filtri.addWidget(btn)
+        riga_filtri.addStretch()
 
         self._btn_cerca_txt = QPushButton(" Cerca txt mancanti")
         self._btn_cerca_txt.setIcon(icona("cerca"))
-        self._btn_cerca_txt.setObjectName("btn_sort")
+        self._btn_cerca_txt.setObjectName("btn_cerca_txt")
         self._btn_cerca_txt.setFixedHeight(28)
         self._btn_cerca_txt.setToolTip("Per ogni video in coda senza txt cerca su YouTube il video\n"
                                        "con lo stesso titolo e crea il txt dai timestamp della descrizione.\n"
                                        "I txt già presenti non vengono mai toccati.")
         self._btn_cerca_txt.clicked.connect(self._on_cerca_txt_mancanti)
-        toolbar.addWidget(self._btn_cerca_txt)
-
-        toolbar.addStretch()
-
-        # Durata totale a destra
-        lbl_duration_title = QLabel("In coda:")
-        lbl_duration_title.setObjectName("lbl_duration")
-        self._lbl_duration = QLabel("—")
-        self._lbl_duration.setObjectName("lbl_duration")
-        self._lbl_duration.setToolTip("Durata totale dei video in coda e tempo di lavoro stimato.\n"
-                                      "La stima usa la velocità misurata su questo computer nelle\n"
-                                      "elaborazioni già fatte: compare dopo la prima.")
-        toolbar.addWidget(lbl_duration_title)
-        toolbar.addWidget(self._lbl_duration)
-
-        layout.addLayout(toolbar)
+        self._btn_cerca_txt.hide()
+        riga_filtri.addWidget(self._btn_cerca_txt)
+        layout.addLayout(riga_filtri)
 
         # Area coda (scrollabile)
         self._queue_scroll = QScrollArea()
@@ -2148,6 +2110,33 @@ class SpotCutterApp(QMainWindow):
         self._pb_global.setFixedHeight(4)
         self._pb_global.setTextVisible(False)
         c_layout.addWidget(self._pb_global)
+
+        # Contatori dei clip creati: compaiono quando c'è qualcosa da contare
+        self._riga_contatori = QWidget()
+        stats_layout = QHBoxLayout(self._riga_contatori)
+        stats_layout.setContentsMargins(0, 4, 0, 0)
+        stats_layout.setSpacing(18)
+        self._main_stat_labels = {}
+        tooltips = {
+            "spot":        "Spot pubblicitari generici",
+            "promo":       "Promo e trailer di programmi TV",
+            "bumper":      "Bumper — brevi stacchetti tra gli spot",
+            "annunci":     "Annunci di palinsesto e comunicati",
+            "natale":      "Spot e contenuti festivi (Natale, Capodanno...)",
+            "cartelli":    "Cartelli e schermate fisse",
+            "videosigle":  "Sigle dei contenitori cinematografici TV\n(es. Lunedì Cinema, I Filmissimi, I Bellissimi...)",
+            "telegiornali": "Frammenti di telegiornale",
+        }
+        for key, label_text in self._NOMI_CONTATORI.items():
+            lbl = QLabel(self._testo_contatore(label_text, 0))
+            lbl.setObjectName("lbl_stat_console")
+            lbl.setToolTip(tooltips.get(key, ""))
+            lbl.hide()
+            stats_layout.addWidget(lbl)
+            self._main_stat_labels[key] = lbl
+        stats_layout.addStretch()
+        self._riga_contatori.hide()
+        c_layout.addWidget(self._riga_contatori)
         c_layout.addSpacing(4)
 
         self._log = QTextEdit()
@@ -2188,10 +2177,12 @@ class SpotCutterApp(QMainWindow):
             empty.setObjectName("lbl_empty_queue")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._queue_layout.insertWidget(0, empty)
-            self._lbl_duration.setText("—")
+            self._lbl_duration.setText("Nessun video")
             self._sync_buttons()
             return
 
+        non_pronti = {v for v, _ in self._non_pronti()}
+        visibili = 0
         for i, (vid, txt, manual_date) in enumerate(queue):
             has_txt = False
             if txt is not None:
@@ -2283,6 +2274,18 @@ class SpotCutterApp(QMainWindow):
 
             self._queue_layout.insertWidget(i, card)
             self.state["status_labels"][i] = card
+            # Il filtro nasconde le card, non le toglie: i numeri d'ordine restano quelli della coda
+            if self._filtro != "tutti" and (vid in non_pronti) != (self._filtro == "sistemare"):
+                card.hide()
+            else:
+                visibili += 1
+
+        if total and not visibili:
+            vuoto = QLabel("Nessun video pronto." if self._filtro == "pronti"
+                           else "Nessun video da sistemare: sono tutti pronti.")
+            vuoto.setObjectName("lbl_empty_queue")
+            vuoto.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._queue_layout.insertWidget(total, vuoto)
 
         self._sync_buttons()
         self._update_duration_label()
@@ -2320,6 +2323,27 @@ class SpotCutterApp(QMainWindow):
                 except RuntimeError:   # card già sostituita da un ridisegno
                     pass
 
+    def _on_filtro(self, chiave: str):
+        """Mostra tutti i video, solo i pronti o solo quelli da sistemare (senza txt o data)."""
+        self._filtro = chiave
+        for k, btn in self._btn_filtri.items():
+            btn.setChecked(k == chiave)
+        self.render_queue()
+
+    def _aggiorna_intestazione(self):
+        """Conteggi sui filtri e, se ci sono video senza txt, il pulsante per cercarli."""
+        coda = self.state.get("queue_files", [])
+        da_sistemare = len(self._non_pronti())
+        testi = {"tutti": f"Tutti  {len(coda)}", "pronti": f"Pronti  {len(coda) - da_sistemare}",
+                 "sistemare": f"Da sistemare  {da_sistemare}"}
+        for k, btn in self._btn_filtri.items():
+            btn.setText(testi[k])
+            btn.setChecked(k == self._filtro)
+        if self._btn_cerca_txt.isEnabled():   # spento = ricerca in corso: il testo è l'avanzamento
+            senza = sum(1 for v, _, _ in coda if not self._txt_presente(v))
+            self._btn_cerca_txt.setText(f" {senza} senza txt · Cerca su YouTube")
+            self._btn_cerca_txt.setVisible(senza > 0)
+
     def _non_pronti(self) -> list:
         """[(video, motivo)] dei video in coda che non si possono ancora elaborare."""
         cartella = self.state.get("current_dir", "")
@@ -2328,6 +2352,7 @@ class SpotCutterApp(QMainWindow):
 
     def _sync_buttons(self):
         """AVVIA è attivo se almeno un video è pronto: quelli non pronti si saltano."""
+        self._aggiorna_intestazione()
         queue = self.state.get("queue_files", [])
         running = self.state.get("running", False)
 
@@ -2424,7 +2449,7 @@ class SpotCutterApp(QMainWindow):
     @staticmethod
     def _testo_contatore(nome: str, n: int) -> str:
         """Nome in grigio e numero nel colore della categoria (quello dell'etichetta, dallo stile)."""
-        return f'<span style="color:#52606D; font-weight:400">{nome}</span>&nbsp;&nbsp;<b>{n}</b>'
+        return f'<span style="color:#8FA1B3; font-weight:400">{nome}</span>&nbsp;&nbsp;<b>{n}</b>'
 
     @Slot()
     def _on_stats_update(self):
@@ -2437,6 +2462,9 @@ class SpotCutterApp(QMainWindow):
             n = self.state["stats_counts"].get(key, 0)
             label_text = display_names.get(key, key.capitalize())
             lbl.setText(self._testo_contatore(label_text, n))
+            lbl.setVisible(n > 0)
+        self._riga_contatori.setVisible(any(self.state["stats_counts"].get(k, 0) > 0
+                                            for k in self._main_stat_labels))
 
     @Slot(bool, float)
     def _on_finished(self, successo: bool, elapsed: float):
