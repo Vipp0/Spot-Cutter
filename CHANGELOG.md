@@ -7,6 +7,11 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ## 🎬 Spot Cutter 1.4.0
 
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Elenco finale dei clip da controllare** — gli stacchi senza nero vengono segnalati mentre il video si elabora, ma lì scorrono via. A fine lavoro il log li ripete tutti insieme, raggruppati per video e scritti per clip: orario, nome e punto da guardare ("03:05 Spot Ford Escort — inizio e fine"). I punti solo stimati sono in rosso; i bumper non vengono elencati, a meno che un loro estremo sia stimato. La finestra di fine lavoro dice quanti clip sono da controllare, e il log ora conserva 800 righe invece di 150, così l'elenco ci sta tutto
+- 🇬🇧 **Final list of clips to check** — cuts without black are reported while the video is processed, but there they scroll away. At the end the log repeats them all together, grouped by video and written per clip: time, name and the point to look at ("03:05 Spot Ford Escort — start and end"). Points that are only estimated are in red; bumpers are not listed, unless one of their ends is estimated. The end-of-work window says how many clips need checking, and the log now keeps 800 lines instead of 150, so the whole list fits
+
 ### 🎨 Nuova grafica / New look
 
 - 🇮🇹 **Interfaccia ridisegnata** — stessi comandi negli stessi posti, aspetto nuovo. I colori vengono dal logo: blu notte per gli elementi importanti (importazione, barra del video in corso, pannello del log) e arancione per l'avanzamento totale. I pulsanti secondari sono tenui e le voci di servizio (Svuota coda, Libreria, Storico, Impostazioni) sono righe leggere; le scritte non sono più in maiuscolo

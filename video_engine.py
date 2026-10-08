@@ -126,6 +126,7 @@ class VideoEngine:
         c_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         completati = 0
         session_log = []   # raccoglie i risultati per il report finale
+        dubbi_sessione = []   # [(video, [righe "clip — cosa guardare"])]: clip con stacchi senza nero
         # Nomi assegnati ma non ancora creati da FFmpeg: evita che due spot
         # con lo stesso nome (es. bumper ripetuti) si sovrascrivano nei tagli paralleli
         nomi_prenotati: set[str] = set()
@@ -314,6 +315,7 @@ class VideoEngine:
                                f"(misurato su {n_campioni} stacchi).", "grey")
             punti = []          # per ogni timestamp: (fine clip precedente, inizio clip)
             da_verificare = 0
+            dubbi = {}          # indice del clip -> {"inizio"/"fine": stimato?}, per l'elenco finale
             for j, (t, tg) in enumerate(zip(timestamps, tagli), 1):
                 mmss = f"{int(t) // 60:02d}:{int(t) % 60:02d}"
                 if tg is None:
@@ -344,6 +346,11 @@ class VideoEngine:
                              f"taglia lì)" if coda else "")
                     await self.log(f"⚠️ Stacco {j} ({mmss}): nessun nero, {motivo} a "
                                    f"{tg['a']:.2f}s{suono} — da verificare", "orange")
+                    # lo stacco j è la fine del clip j-1 e l'inizio del clip j
+                    stimato = tg["tipo"] != "scena"
+                    if j >= 2:
+                        dubbi.setdefault(j - 2, {})["fine"] = stimato
+                    dubbi.setdefault(j - 1, {})["inizio"] = stimato
                     # Senza nero il fotogramma sul punto di stacco è già del clip successivo:
                     # mezzo fotogramma prima basta a escluderlo dal clip precedente.
                     punti.append((tg["a"] - 0.02, tg["a"], coda))
@@ -585,6 +592,9 @@ class VideoEngine:
                             f"{tagli_riusciti} tagli"
                         )
                     completati += 1
+                    righe_dubbi = self._clip_da_controllare(spot_list, dubbi)
+                    if righe_dubbi:
+                        dubbi_sessione.append((vid, righe_dubbi))
 
         # --- AGGIORNAMENTO PROGRESSO GLOBALE (v0.86) ---
         if global_progress_cb and state.get("running", True):
@@ -600,8 +610,41 @@ class VideoEngine:
                 await self.log(entry, "white")
             await self.log("─" * 40, "grey")
 
+        # Gli stacchi senza nero vengono segnalati mentre si lavora, ma lì scorrono via:
+        # a fine lavoro si ripetono tutti insieme, con i nomi dei due clip da guardare
+        state["dubbi"] = dubbi_sessione
+        if dubbi_sessione:
+            n = sum(len(d) for _, d in dubbi_sessione)
+            await self.log(f"🔎 DA CONTROLLARE: {n} clip tagliat{'o' if n == 1 else 'i'} senza un nero "
+                           f"(per ognuno, il punto da guardare):", "orange")
+            for vid, righe in dubbi_sessione:
+                await self.log(f"  {os.path.splitext(vid)[0]}", "white")
+                for riga, stimato in righe:
+                    await self.log(f"     {riga}", "red" if stimato else "orange")
+            await self.log("─" * 40, "grey")
+
         return state.get("running", True)
     
+    @staticmethod
+    def _clip_da_controllare(spot_list, dubbi) -> list:
+        """
+        Dai clip con un estremo tagliato senza nero, le righe per l'elenco di fine lavoro:
+        [("03:05  Spot Ford Escort — inizio e fine", c'è un punto stimato?)]. I bumper non si
+        elencano (contano gli spot), a meno che un loro estremo sia solo stimato.
+        """
+        righe = []
+        for i in sorted(dubbi):
+            lati = dubbi[i]
+            stimato = any(lati.values())
+            nome = spot_list[i]["n"]
+            if nome.lower().startswith("bumper") and not stimato:
+                continue
+            t = int(spot_list[i]["t"])
+            cosa = " e ".join(lato + (" (punto solo stimato)" if lati[lato] else "")
+                              for lato in ("inizio", "fine") if lato in lati)
+            righe.append((f"{t // 60:02d}:{t % 60:02d}  {nome} — {cosa}", stimato))
+        return righe
+
     @staticmethod
     def _leggi_json(path: str) -> dict:
         try:

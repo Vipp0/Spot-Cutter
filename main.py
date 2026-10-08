@@ -2386,9 +2386,9 @@ class SpotCutterApp(QMainWindow):
         cursor.setCharFormat(fmt)
         cursor.insertText(f"> {msg}\n")
 
-        # Limita a 150 righe
+        # Limita a 800 righe (l'elenco finale degli stacchi da controllare deve restarci tutto)
         doc = self._log.document()
-        if doc.blockCount() > 150:
+        if doc.blockCount() > 800:
             cur = QTextCursor(doc)
             cur.movePosition(QTextCursor.MoveOperation.Start)
             cur.select(QTextCursor.SelectionType.BlockUnderCursor)
@@ -2505,6 +2505,11 @@ class SpotCutterApp(QMainWindow):
             if len(saltati) > 8:
                 elenco += f"\n  · ... e altri {len(saltati) - 8}"
             testo_box += (f"\n\nSaltati perché non pronti ({len(saltati)}), restano in coda:\n{elenco}")
+        dubbi = self.state.get("dubbi", [])
+        if dubbi:
+            n = sum(len(d) for _, d in dubbi)
+            testo_box += (f"\n\nDa controllare: {n} clip tagliat{'o' if n == 1 else 'i'} senza un nero, "
+                          f"in {len(dubbi)} video.\nL'elenco con i nomi è in fondo al log.")
         
         msg_box.setText(testo_box)
         
@@ -2763,6 +2768,7 @@ class SpotCutterApp(QMainWindow):
         self.state["use_master"] = bool(self._s.get("use_master", False))
         self.state["tempi_video"] = []
         self.state["saltati"] = []
+        self.state["dubbi"] = []
         # Il motore aspetta qualche secondo i video la cui data è ancora in verifica online
         self.state["date_in_verifica"] = self._date_in_verifica
         self.state["txt_in_ricerca"] = self._txt_in_ricerca
