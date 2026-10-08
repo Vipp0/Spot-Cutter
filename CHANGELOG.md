@@ -24,6 +24,9 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 - 🇮🇹 **Avanzamento e log in un pannello unico** — in basso c'è un solo pannello blu notte: in alto l'operazione in corso con la percentuale e la sua barra, sotto il totale dei video con la barra arancione, e poi il log. Occupa meno spazio di prima, quindi la coda ne ha di più; a programma fermo dice "Pronto"
 - 🇬🇧 **Progress and log in a single panel** — at the bottom there is one night-blue panel: at the top the current operation with its percentage and bar, below it the total of the videos with the orange bar, then the log. It takes less room than before, so the queue has more; when idle it says "Ready"
 
+- 🇮🇹 **Log che si apre senza scatti** — il pulsante che ingrandisce il log da sempre andava a scatti: il riquadro cresceva fino a metà e poi saltava all'altezza finale, e in chiusura non si animava affatto. Ora si anima l'altezza vera del riquadro, in apertura e in chiusura, anche se si clicca di nuovo a metà movimento
+- 🇬🇧 **Log that opens without jerks** — the button that enlarges the log had always been jerky: the box grew halfway and then jumped to its final height, and on closing it was not animated at all. Now the real height of the box is animated, both opening and closing, even when clicking again halfway through
+
 - 🇮🇹 **Finestre secondarie** — impostazioni, editor del txt, data, storico, tagli manuali e finestre di messaggio seguono lo stesso stile: un pulsante principale blu notte per finestra, gli altri tenui
 - 🇬🇧 **Secondary windows** — settings, txt editor, date, history, manual cuts and message boxes follow the same style: one night-blue main button per window, the others soft
 

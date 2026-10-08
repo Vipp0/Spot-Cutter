@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings,
-    QPropertyAnimation, QEasingCurve
+    QPropertyAnimation, QEasingCurve, QVariantAnimation
 )
 from PySide6.QtGui import (
     QFont, QColor, QPalette, QIcon, QTextCursor, QPixmap
@@ -1528,18 +1528,21 @@ class SpotCutterApp(QMainWindow):
             self.settings_storage.setValue(chiave, ora if prima <= 0 else 0.6 * prima + 0.4 * ora)
 
     def _on_expand_log(self, checked: bool):
-        """Espande o riduce il log con animazione."""
-        self._log.setMaximumHeight(16777215)  # rimuove il limite fisso durante l'animazione
-        anim = QPropertyAnimation(self._log, b"maximumHeight")
-        anim.setDuration(200)
-        anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
-        if checked:
-            anim.setStartValue(130)
-            anim.setEndValue(400)
-        else:
-            anim.setStartValue(400)
-            anim.setEndValue(130)
-        anim.finished.connect(lambda: self._log.setFixedHeight(400 if checked else 130))
+        """
+        Espande o riduce il log con animazione. Si anima l'altezza vera del riquadro (minima
+        e massima insieme): animando solo la massima il riquadro si fermava a metà strada e
+        saltava all'altezza finale a fine animazione.
+        """
+        vecchia = getattr(self, "_anim_log", None)
+        if vecchia is not None:
+            vecchia.stop()
+        anim = QVariantAnimation(self)
+        anim.setDuration(220)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.setStartValue(self._log.height())   # da dove si trova, anche se si riclicca a metà
+        anim.setEndValue(400 if checked else 130)
+        anim.valueChanged.connect(lambda v: self._log.setFixedHeight(int(v)))
+        anim.finished.connect(self._log.ensureCursorVisible)
         anim.start()
         self._anim_log = anim  # mantieni riferimento per evitare garbage collection
 
