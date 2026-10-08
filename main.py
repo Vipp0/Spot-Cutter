@@ -429,20 +429,22 @@ class VideoCard(QFrame):
         has_txt = "TXT OK" in self.txt_part.text()
         
         # --- NUOVA LOGICA COLORI SOFT (v0.86) ---
-        COLOR_VERDE   = "#4CAF50" # Verde mela soft
-        COLOR_ROSSO   = "#EF5350" # Rosso corallo delicato
-        COLOR_ARANCIO = "#FFB74D" # Arancio pesca
-        COLOR_BLU     = "#42A5F5" # Blu pastello
+        # (sfondo, testo): tinte tenui, il testo è il tono scuro della stessa famiglia
+        COLOR_VERDE   = ("#E3F3E8", "#1B6B3A")
+        COLOR_ROSSO   = ("#FBE4E2", "#A3271F")
+        COLOR_ARANCIO = ("#FDEBCF", "#8A5200")
+        COLOR_BLU     = ("#E1EDF8", "#134A7C")
+        COLOR_ATTESA  = ("#E6EBF0", "#4A5D6E")   # ricerca o verifica online in corso
         
         # 1. Sinistra (TXT): Verde se OK, Arancio se ha righe ignorate, Rosso se manca
         da_controllare = self._txt_ignorate or self._txt_fuori_ordine
         txt_bg = (COLOR_ARANCIO if da_controllare else COLOR_VERDE) if has_txt else COLOR_ROSSO
         if "⏳" in self.txt_part.text():
-            txt_bg = "#78909C"   # ricerca del txt su YouTube in corso
+            txt_bg = COLOR_ATTESA   # ricerca del txt su YouTube in corso
         
         # 2. Destra (DATA): Basata sulle icone
         if "⏳" in text:
-            date_bg = "#78909C"   # verifica online in corso
+            date_bg = COLOR_ATTESA   # verifica online in corso
         elif "✅" in text:
             date_bg = COLOR_VERDE
         elif "⚠️" in text:
@@ -453,19 +455,26 @@ class VideoCard(QFrame):
             # Gestione del fallback per il colore passato (se è blu o grigio, lo addolciamo)
             if color.lower() in ["blue", "#2196f3"]:
                 date_bg = COLOR_BLU
+            elif color.lower() in ["orange", "#ff9500"]:
+                date_bg = COLOR_ARANCIO
+            elif color.lower() in ["#4caf50", "#4cd964", "green"]:
+                date_bg = COLOR_VERDE
+            elif color.lower() in ["#ff3b30", "red"]:
+                date_bg = COLOR_ROSSO
             else:
-                date_bg = color 
+                date_bg = COLOR_ATTESA
 
         # Applichiamo lo stile CSS (Mantenendo i bordi per l'effetto "badge unico")
-        common = "padding: 3px 10px; color: white; font-weight: 800; font-size: 10px; font-family: 'Segoe UI';"
-        
+        common = "padding: 3px 10px; font-weight: 600; font-size: 11px;"
+
         self.txt_part.setStyleSheet(
-            f"background-color: {txt_bg}; {common} "
+            f"background-color: {txt_bg[0]}; color: {txt_bg[1]}; {common} "
             "border-top-left-radius: 6px; border-bottom-left-radius: 6px; "
-            "border-top-right-radius: 0px; border-bottom-right-radius: 0px;"
+            "border-top-right-radius: 0px; border-bottom-right-radius: 0px; "
+            "border-right: 1px solid #FFFFFF;"
         )
         self.date_part.setStyleSheet(
-            f"background-color: {date_bg}; {common} "
+            f"background-color: {date_bg[0]}; color: {date_bg[1]}; {common} "
             "border-top-left-radius: 0px; border-bottom-left-radius: 0px; "
             "border-top-right-radius: 6px; border-bottom-right-radius: 6px;"
         )
@@ -1699,7 +1708,7 @@ class SpotCutterApp(QMainWindow):
         layout.addSpacing(8)
 
         # Sezione YOUTUBE
-        yt_lbl = QLabel("📺  YOUTUBE")
+        yt_lbl = QLabel("YouTube")
         yt_lbl.setObjectName("lbl_section")
         layout.addWidget(yt_lbl)
 
@@ -1742,7 +1751,7 @@ class SpotCutterApp(QMainWindow):
         pill_layout.setSpacing(0)
 
         # Pulsante Importa (Sinistro)
-        self._btn_yt = QPushButton("▶ IMPORTA DA YT")
+        self._btn_yt = QPushButton("Importa da YouTube")
         self._btn_yt.setObjectName("btn_yt_left")
         self._btn_yt.setFixedHeight(40)
         self._btn_yt.clicked.connect(self._on_yt_download)
@@ -1771,20 +1780,20 @@ class SpotCutterApp(QMainWindow):
         layout.addWidget(sep1)
 
         # Sezione FILE LOCALI
-        lbl_local = QLabel("📂  FILE LOCALI")
+        lbl_local = QLabel("File locali")
         lbl_local.setObjectName("lbl_section")
         layout.addWidget(lbl_local)
 
         # Bottoni file
-        btn_folder = self._make_btn("📁  Sfoglia Cartella", "btn_folder")
+        btn_folder = self._make_btn("📁  Sfoglia cartella", "btn_folder")
         btn_folder.clicked.connect(self._on_browse_folder)
         layout.addWidget(btn_folder)
 
-        btn_files = self._make_btn("🎬  Aggiungi Video", "btn_files")
+        btn_files = self._make_btn("🎬  Aggiungi video", "btn_files")
         btn_files.clicked.connect(self._on_add_files)
         layout.addWidget(btn_files)
 
-        self._btn_clear = self._make_btn("🗑  Svuota Coda", "btn_clear")
+        self._btn_clear = self._make_btn("🗑  Svuota coda", "btn_clear")
         self._btn_clear.setEnabled(False)
         self._btn_clear.clicked.connect(self._on_clear_queue)
         layout.addWidget(self._btn_clear)
@@ -1794,7 +1803,7 @@ class SpotCutterApp(QMainWindow):
         sep2.setFrameShape(QFrame.Shape.HLine)
         layout.addWidget(sep2)
 
-        lbl_folder = QLabel("📁  DESTINAZIONE")
+        lbl_folder = QLabel("Libreria")
         lbl_folder.setObjectName("lbl_section")
         layout.addWidget(lbl_folder)
 
@@ -1816,12 +1825,12 @@ class SpotCutterApp(QMainWindow):
         layout.addStretch()
 
         # AVVIA / STOP
-        self._btn_run = self._make_btn("▶  AVVIA", "btn_run", h=55)
+        self._btn_run = self._make_btn("▶  Avvia", "btn_run", h=55)
         self._btn_run.setEnabled(False)
         self._btn_run.clicked.connect(lambda: self._on_run())
         layout.addWidget(self._btn_run)
 
-        self._btn_stop = self._make_btn("⏹  STOP", "btn_stop", h=45)
+        self._btn_stop = self._make_btn("⏹  Stop", "btn_stop", h=45)
         self._btn_stop.clicked.connect(self._on_stop)
         self._btn_stop.hide()
         layout.addWidget(self._btn_stop)
@@ -1883,7 +1892,7 @@ class SpotCutterApp(QMainWindow):
         toolbar.setSpacing(8)
 
         # Etichetta SESSIONE
-        lbl_sessione = QLabel("SESSIONE")
+        lbl_sessione = QLabel("Sessione")
         lbl_sessione.setObjectName("lbl_section")
         toolbar.addWidget(lbl_sessione)
 
@@ -2159,9 +2168,9 @@ class SpotCutterApp(QMainWindow):
         can_start = pronti > 0 and not running
         if not running:
             if non_pronti and pronti:
-                self._btn_run.setText(f"▶  AVVIA ({pronti} di {len(queue)})")
+                self._btn_run.setText(f"▶  Avvia ({pronti} di {len(queue)})")
             else:
-                self._btn_run.setText("▶  AVVIA")
+                self._btn_run.setText("▶  Avvia")
             if non_pronti:
                 elenco = "\n".join(f"  · {v[:60]} — {m}" for v, m in non_pronti[:8])
                 if len(non_pronti) > 8:
@@ -2198,13 +2207,13 @@ class SpotCutterApp(QMainWindow):
         fmt = cursor.charFormat()
         # Converte nomi colore comuni in hex
         color_map = {
-            "white": "#E0E0E0", "grey": "#9E9E9E", "gray": "#9E9E9E",
-            "cyan": "#00BCD4", "blue": "#42A5F5", "green": "#66BB6A",
-            "orange": "#FFA726", "red": "#EF5350", "yellow": "#FFEE58",
-            "magenta": "#CE93D8",
+            "white": "#DCE3EA", "grey": "#8FA1B3", "gray": "#8FA1B3",
+            "cyan": "#5CC8D6", "blue": "#7DB7F0", "green": "#7BCB8E",
+            "orange": "#F2B25C", "red": "#F0807A", "yellow": "#EDD97A",
+            "magenta": "#C9A0DC",
         }
         hex_color = color_map.get(color.lower(), color
-                                   if color.startswith("#") else "#E0E0E0")
+                                   if color.startswith("#") else "#DCE3EA")
         fmt.setForeground(QColor(hex_color))
         cursor.setCharFormat(fmt)
         cursor.insertText(f"> {msg}\n")
@@ -2381,7 +2390,7 @@ class SpotCutterApp(QMainWindow):
         if hasattr(self, "_btn_dl"):
             self._btn_dl.setEnabled(True)
             
-        self._btn_yt.setText("▶ IMPORTA DA YT")
+        self._btn_yt.setText("Importa da YouTube")
         self._on_progress(0, "Pronto.")
         
         playlist = self._yt_playlist_attiva
@@ -3014,7 +3023,7 @@ class SpotCutterApp(QMainWindow):
             self._on_log("❌ Impossibile analizzare il link.", "red")
             self._btn_yt.setEnabled(True)
             if hasattr(self, "_btn_dl"): self._btn_dl.setEnabled(True) # Fix pillola
-            self._btn_yt.setText("▶ IMPORTA DA YT")
+            self._btn_yt.setText("Importa da YouTube")
             self._on_progress(0, "Errore link.")
             return
 
@@ -3045,7 +3054,7 @@ class SpotCutterApp(QMainWindow):
                 # Annullato: ripristina entrambi i bottoni
                 self._btn_yt.setEnabled(True)
                 if hasattr(self, "_btn_dl"): self._btn_dl.setEnabled(True)
-                self._btn_yt.setText("▶ IMPORTA DA YT")
+                self._btn_yt.setText("Importa da YouTube")
                 self._on_progress(0, "Pronto.")
                 self._is_direct_download = False # Reset flag di sicurezza
                 return
@@ -3061,7 +3070,7 @@ class SpotCutterApp(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 self._btn_yt.setEnabled(True)
                 if hasattr(self, "_btn_dl"): self._btn_dl.setEnabled(True)
-                self._btn_yt.setText("▶ IMPORTA DA YT")
+                self._btn_yt.setText("Importa da YouTube")
                 self._on_progress(0, "Download annullato.")
                 self._is_direct_download = False
                 return
