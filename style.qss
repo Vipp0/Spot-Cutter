@@ -155,23 +155,23 @@ QFrame#separator {
 
 /* ── PULSANTI DELLA BARRA LATERALE ─────────────────────────────────────── */
 
-/* Importa da YouTube: pulsante principale della sua sezione, blu notte */
+/* Importa da YouTube: rosso YouTube, l'unica eccezione ai colori del programma */
 QPushButton#btn_yt_left {
-    background-color: #1D3B53;
+    background-color: #CC0000;
     color: #FFFFFF;
     border: none;
     border-top-left-radius: 8px;
     border-bottom-left-radius: 8px;
     border-top-right-radius: 0px;
     border-bottom-right-radius: 0px;
-    border-right: 1px solid #35536C;
+    border-right: 1px solid #E04A4A;
     font-size: 13px;
     font-weight: 600;
     min-height: 40px;
 }
 
 QPushButton#btn_yt_right {
-    background-color: #1D3B53;
+    background-color: #CC0000;
     color: #FFFFFF;
     border: none;
     border-top-left-radius: 0px;
@@ -184,7 +184,7 @@ QPushButton#btn_yt_right {
 
 QPushButton#btn_yt_left:hover,
 QPushButton#btn_yt_right:hover {
-    background-color: #2A4D6A;
+    background-color: #A30000;
 }
 
 QPushButton#btn_yt_left:disabled,
