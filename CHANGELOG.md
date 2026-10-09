@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.4.1
+
+### 🔧 Miglioramenti / Improvements
+
+- 🇮🇹 **I video "solo nomi" si riconoscono subito** — alcune descrizioni più vecchie su YouTube hanno la lista dei nomi degli spot ma non gli orari: il txt non si può creare da solo, ma con i tagli manuali i nomi si inseriscono da soli a ogni nero scelto. Finora niente lo diceva: la card mostrava solo "NO TXT". Ora la pillola è azzurra e dice quanti nomi sono pronti ("NO TXT · 18 nomi"), il log lo segnala e un clic sulla pillola apre direttamente i tagli manuali, che usano i nomi già trovati senza rifare la ricerca
+- 🇬🇧 **"Names only" videos are recognised at a glance** — some older descriptions on YouTube have the list of spot names but no times: the txt cannot be created automatically, but with manual cuts the names are inserted by themselves at each black chosen. Until now nothing said so: the card only showed "NO TXT". Now the pill is light blue and says how many names are ready ("NO TXT · 18 names"), the log reports it and a click on the pill opens manual cuts directly, which use the names already found without searching again
+
+---
+
 ## 🎬 Spot Cutter 1.4.0
 
 ### ✨ Nuove funzionalità / New features

@@ -320,8 +320,9 @@ class VideoCard(QFrame):
                  is_first: bool, is_last: bool,
                  is_running: bool, current_dir: str = "", parent=None,
                  date_tooltip: str | None = None, txt_in_ricerca: bool = False,
-                 miniatura: QPixmap | None = None, durata: float = 0.0):
+                 miniatura: QPixmap | None = None, durata: float = 0.0, nomi_pronti: int = 0):
         super().__init__(parent)
+        self._nomi_pronti = nomi_pronti
         self.idx = idx
         self.vid = vid
         self.current_dir = current_dir
@@ -423,7 +424,8 @@ class VideoCard(QFrame):
         layout.addLayout(btn_layout)
 
         # Impostazione iniziale dei testi e degli stili
-        self.txt_part.setText(f"{'TXT OK' if has_txt else 'TXT ⏳' if txt_in_ricerca else 'NO TXT'}")
+        self.txt_part.setText("TXT OK" if has_txt else "TXT ⏳" if txt_in_ricerca
+                              else f"NO TXT · {nomi_pronti} nomi" if nomi_pronti else "NO TXT")
         # Tooltip anteprima TXT (prima dei colori: trova anche le righe ignorate)
         self._txt_ignorate = []
         self._txt_fuori_ordine = []
@@ -490,6 +492,10 @@ class VideoCard(QFrame):
             self.txt_part.setToolTip("⏳ Ricerca del txt su YouTube in corso…\n"
                                      "Se il video si trova, il txt arriva da solo dalla descrizione.")
             return
+        if self._nomi_pronti and "NO TXT" in self.txt_part.text():
+            self.txt_part.setToolTip(f"Su YouTube non ci sono gli orari, ma c'è la lista dei {self._nomi_pronti} nomi.\n"
+                                     "Clicca (o usa le forbici): scegli i neri e i nomi si inseriscono da soli.")
+            return
         if "NO TXT" in self.txt_part.text():
             self.txt_part.setToolTip("Nessun file TXT associato.\nClicca per crearne uno.")
             return
@@ -554,6 +560,8 @@ class VideoCard(QFrame):
         txt_bg = (COLOR_ARANCIO if da_controllare else COLOR_VERDE) if has_txt else COLOR_ROSSO
         if "⏳" in self.txt_part.text():
             txt_bg = COLOR_ATTESA   # ricerca del txt su YouTube in corso
+        elif not has_txt and self._nomi_pronti:
+            txt_bg = COLOR_BLU      # niente orari, ma la lista dei nomi c'è: tagli manuali
         
         # 2. Destra (DATA): Basata sulle icone
         if "⏳" in text:
@@ -1006,7 +1014,8 @@ class BlackdetectDialog(QDialog):
     """
     _sig_blacks_ready = Signal(list)  # segnale thread-safe per risultato blackdetect
 
-    def __init__(self, vid_path: str, txt_path: str, settings: dict, parent=None):
+    def __init__(self, vid_path: str, txt_path: str, settings: dict, parent=None,
+                 nomi_pronti: list | None = None):
         super().__init__(parent)
         self.vid_path  = vid_path
         self.txt_path  = txt_path
@@ -1139,7 +1148,11 @@ class BlackdetectDialog(QDialog):
         QTimer.singleShot(100, self._run_blackdetect)
 
         # Senza txt: intanto cerca il video su YouTube (txt completo o lista dei nomi)
-        if not os.path.exists(txt_path) and hasattr(parent, "_avvia_ricerca_youtube"):
+        if not os.path.exists(txt_path) and nomi_pronti:
+            # la ricerca automatica li ha già trovati quando il video è entrato in coda
+            self._on_youtube(os.path.basename(vid_path),
+                             {"esito": "no_timestamp", "nomi": list(nomi_pronti), "messaggio": ""})
+        elif not os.path.exists(txt_path) and hasattr(parent, "_avvia_ricerca_youtube"):
             self._lbl_nomi.setText("🔎 Ricerca della lista dei nomi su YouTube...")
             self._ricerca = parent._avvia_ricerca_youtube([os.path.basename(vid_path)],
                                                           self._on_youtube)
@@ -1412,6 +1425,7 @@ class SpotCutterApp(QMainWindow):
         self.work_dir = str(self.settings_storage.value("work_dir", default_path))
         self._ricerche_txt = []   # ricerche txt su YouTube in corso: (thread, worker)
         self._date_verificate = set()   # video già mandati alla verifica online della data
+        self._nomi_trovati = {}         # percorso del video -> nomi letti dalla descrizione YouTube
         self._info_video = {}           # percorso del video -> (durata, miniatura) già letti
         self._info_in_corso = set()     # percorsi di cui si sta leggendo durata e miniatura
         self._txt_auto_cartelle = {}    # video in ricerca automatica del txt -> cartella del video
@@ -2263,7 +2277,9 @@ class SpotCutterApp(QMainWindow):
                 current_dir=self.state.get("current_dir", ""),
                 date_tooltip=None if is_done else tip_data,
                 txt_in_ricerca=vid in self._txt_in_ricerca,
-                miniatura=info[1], durata=info[0])
+                miniatura=info[1], durata=info[0],
+                nomi_pronti=len(self._nomi_trovati.get(
+                    os.path.join(self.state.get("current_dir", ""), vid), ())))
 
             card.sig_move_up.connect(self._move_item_up)
             card.sig_move_down.connect(self._move_item_down)
@@ -2867,7 +2883,8 @@ class SpotCutterApp(QMainWindow):
                                 f"Il file video non è stato trovato:\n{vid_path}")
             return
 
-        dlg = BlackdetectDialog(vid_path, txt_path, self._s, parent=self)
+        dlg = BlackdetectDialog(vid_path, txt_path, self._s, parent=self,
+                                nomi_pronti=self._nomi_trovati.get(vid_path))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             # Aggiorna la coda: imposta il txt per questo video
             for i, (v, t, d) in enumerate(self.state["queue_files"]):
@@ -2889,6 +2906,11 @@ class SpotCutterApp(QMainWindow):
             return
         base = os.path.splitext(vid_name)[0]
         file_path = os.path.join(self.state["current_dir"], f"{base}.txt")
+        # Senza txt ma con la lista dei nomi pronta: la strada giusta sono i tagli manuali
+        if (not os.path.exists(file_path)
+                and self._nomi_trovati.get(os.path.join(self.state["current_dir"], vid_name))):
+            self._on_cut_manual(vid_name)
+            return
         contenuto = ""
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
@@ -3033,7 +3055,7 @@ class SpotCutterApp(QMainWindow):
         detto = vid in self._date_in_verifica and not r.get("data")
         if vid in self._date_in_verifica:
             self._on_data_verificata(vid, r)
-        if not (detto and r["esito"] != "ok"):   # il motivo è già nel log della data
+        if not (detto and r["esito"] != "ok" and not r.get("nomi")):   # il motivo è già nel log della data
             self._salva_txt_trovato(vid, r, cartella)
         self.render_queue()
 
@@ -3084,8 +3106,15 @@ class SpotCutterApp(QMainWindow):
         """Esito di una ricerca su YouTube: scrive il txt accanto al video. True se l'ha scritto."""
         base = os.path.splitext(vid)[0]
         if r["esito"] != "ok":
-            self._on_log(f"⚠️ {base}: {r['messaggio']}.", "orange")
-            if r.get("data") and self.state["current_dir"] == cartella:
+            nomi = r.get("nomi") or []
+            if len(nomi) >= 2:   # una riga sola è la descrizione di uno spot singolo, non una lista
+                # niente orari, ma la lista dei nomi sì: la pillola lo dice e le forbici la usano
+                self._nomi_trovati[os.path.join(cartella, vid)] = nomi
+                self._on_log(f"⚠️ {base}: {r['messaggio']}. C'è però la lista dei {len(nomi)} nomi: "
+                             f"usa le forbici per scegliere i neri.", "orange")
+            else:
+                self._on_log(f"⚠️ {base}: {r['messaggio']}.", "orange")
+            if (r.get("data") or len(nomi) >= 2) and self.state["current_dir"] == cartella:
                 self._applica_data_youtube(vid, r["data"])   # trovato, ma senza timestamp
                 self.render_queue()
             return False
