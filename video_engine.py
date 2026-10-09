@@ -616,6 +616,8 @@ class VideoEngine:
         # Gli stacchi senza nero vengono segnalati mentre si lavora, ma lì scorrono via:
         # a fine lavoro si ripetono tutti insieme, con i nomi dei due clip da guardare
         state["dubbi"] = dubbi_sessione
+        if not dubbi_sessione:
+            await self._salva_da_controllare(state, [], 0)
         if dubbi_sessione:
             n = sum(len(d) for _, d in dubbi_sessione)
             await self.log(f"🔎 DA CONTROLLARE: {n} clip tagliat{'o' if n == 1 else 'i'} senza un nero "
@@ -624,24 +626,94 @@ class VideoEngine:
                 await self.log(f"  {os.path.splitext(vid)[0]}", "white")
                 for riga, stimato, _ in righe:
                     await self.log(f"     {riga}", "red" if stimato else "orange")
-            # Lo stesso elenco resta in un file nella libreria, da spuntare con calma: ogni
-            # elaborazione si aggiunge in fondo, con la sua data
-            file_elenco = os.path.join(state.get("work_dir", state["current_dir"]), "Da controllare.txt")
-            try:
-                with open(file_elenco, "a", encoding="utf-8-sig" if not os.path.exists(file_elenco) else "utf-8") as f:
-                    f.write(f"===== Elaborazione del {time.strftime('%d-%m-%Y %H:%M')} — {n} clip da controllare =====\n")
-                    for vid, righe in dubbi_sessione:
-                        f.write(f"\n{os.path.splitext(vid)[0]}\n")
-                        for riga, _, percorso in righe:
-                            f.write(f"  [ ] {riga}\n" + (f"        {percorso}\n" if percorso else ""))
-                    f.write("\n")
-                await self.log(f"📝 Elenco salvato anche in: {file_elenco}", "cyan")
-            except OSError as e:
-                await self.log(f"⚠️ Impossibile salvare l'elenco in {file_elenco}: {e}", "orange")
+            await self._salva_da_controllare(state, dubbi_sessione, n)
             await self.log("─" * 40, "grey")
 
         return state.get("running", True)
     
+    async def _salva_da_controllare(self, state, dubbi_sessione, n):
+        """
+        Il file "Da controllare.txt" nella libreria: l'elenco di questa elaborazione si aggiunge
+        in fondo con la sua data. Prima si tolgono le righe che l'utente ha spuntato ([x]),
+        così il file si accorcia da solo man mano che i clip vengono controllati.
+        """
+        file_elenco = os.path.join(state.get("work_dir", state["current_dir"]), "Da controllare.txt")
+        try:
+            testo, tolte = "", 0
+            if os.path.exists(file_elenco):
+                with open(file_elenco, "r", encoding="utf-8-sig", errors="replace") as f:
+                    testo, tolte = self._togli_spuntati(f.read())
+            elif not dubbi_sessione:
+                return
+            if dubbi_sessione:
+                testo += f"===== Elaborazione del {time.strftime('%d-%m-%Y %H:%M')} — {n} clip da controllare =====\n"
+                for vid, righe in dubbi_sessione:
+                    testo += f"\n{os.path.splitext(vid)[0]}\n"
+                    for riga, _, percorso in righe:
+                        testo += f"  [ ] {riga}\n" + (f"        {percorso}\n" if percorso else "")
+                testo += "\n"
+            if testo.strip():
+                with open(file_elenco, "w", encoding="utf-8-sig") as f:
+                    f.write(testo)
+            else:
+                os.remove(file_elenco)   # tutto controllato: il file non serve più
+            if tolte:
+                await self.log(f"🧹 Da controllare.txt: tolt{'o' if tolte == 1 else 'i'} {tolte} clip "
+                               f"già spuntat{'o' if tolte == 1 else 'i'}.", "grey")
+            if dubbi_sessione:
+                await self.log(f"📝 Elenco salvato anche in: {file_elenco}", "cyan")
+        except OSError as e:
+            await self.log(f"⚠️ Impossibile aggiornare l'elenco in {file_elenco}: {e}", "orange")
+
+    @staticmethod
+    def _togli_spuntati(testo: str) -> tuple:
+        """
+        Toglie da "Da controllare.txt" i clip spuntati ("[x]", con la riga del percorso sotto),
+        i video rimasti senza clip e le elaborazioni rimaste senza video; aggiorna il conteggio
+        nelle intestazioni. Le righe che non riconosce (appunti scritti a mano) restano.
+        Ritorna (testo ripulito, quanti clip ha tolto).
+        """
+        sessioni, tolte = [], 0          # sessione = [intestazione, [video = [titolo, [righe]]]]
+        video = None
+        salta_percorso = False
+        for riga in testo.splitlines():
+            if riga.startswith("====="):
+                sessioni.append([riga, []]); video = None; salta_percorso = False
+            elif re.match(r"\s*\[\s*[xX✓✔]\s*\]", riga):
+                tolte += 1; salta_percorso = True
+            elif re.match(r"\s*\[\s*\]", riga):
+                salta_percorso = False
+                if video is None:
+                    video = ["", []]
+                    (sessioni or [["", []]])[-1][1].append(video) if sessioni else sessioni.append(["", [video]])
+                video[1].append(riga)
+            elif not riga.strip():
+                salta_percorso = False
+            elif riga.startswith((" ", "\t")):
+                if not salta_percorso and video is not None:
+                    video[1].append(riga)       # percorso del clip (o appunto rientrato) sotto la sua riga
+            else:
+                salta_percorso = False
+                video = [riga, []]
+                if not sessioni:
+                    sessioni.append(["", []])
+                sessioni[-1][1].append(video)
+        fuori = []
+        for intestazione, lista in sessioni:
+            lista = [v for v in lista if any(re.match(r"\s*\[\s*\]", r) for r in v[1])]
+            if not lista:
+                continue
+            n = sum(1 for v in lista for r in v[1] if re.match(r"\s*\[\s*\]", r))
+            if intestazione:
+                fuori.append(re.sub(r"— \d+ clip da controllare", f"— {n} clip da controllare", intestazione))
+            for titolo, righe in lista:
+                fuori.append("")
+                if titolo:
+                    fuori.append(titolo)
+                fuori.extend(righe)
+            fuori.append("")
+        return ("\n".join(fuori) + "\n" if fuori else ""), tolte
+
     @staticmethod
     def _clip_da_controllare(spot_list, dubbi, percorsi=None) -> list:
         """

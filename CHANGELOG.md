@@ -9,6 +9,9 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ### 🔧 Miglioramenti / Improvements
 
+- 🇮🇹 **`Da controllare.txt` si accorcia da solo** — nel file dei clip da controllare basta mettere una x nella casella dei clip già guardati (`[x]`): alla fine dell'elaborazione successiva il programma toglie le righe spuntate, i video rimasti senza righe e le elaborazioni rimaste vuote, e aggiorna i conteggi. Quando tutto è spuntato il file viene eliminato. Gli appunti scritti a mano sotto una riga restano
+- 🇬🇧 **`Da controllare.txt` shrinks by itself** — in the file of clips to check, just put an x in the box of the clips already looked at (`[x]`): at the end of the next run the program removes the ticked lines, the videos left without lines and the runs left empty, and updates the counts. When everything is ticked the file is deleted. Notes written by hand under a line are kept
+
 - 🇮🇹 **La stima del lavoro conta solo i video pronti** — il riepilogo sopra la coda stimava il lavoro su tutti i video, anche quelli senza txt o senza data che vengono saltati. Ora la durata resta quella di tutta la coda, ma la stima riguarda solo i video pronti e lo dice ("lavoro: circa 22m per i 6 pronti"). Le durate non vengono più rilette a ogni ridisegno della coda: si usano quelle già lette per le card
 - 🇬🇧 **The work estimate counts only the ready videos** — the summary above the queue estimated the work on all videos, including those without a txt or a date, which are skipped. Now the length is still that of the whole queue, but the estimate covers only the ready videos and says so ("work: about 22m for the 6 ready"). Lengths are no longer read again at every queue redraw: those already read for the cards are used
 
