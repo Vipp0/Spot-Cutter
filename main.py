@@ -50,7 +50,10 @@ from utils import (
     get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
     get_seconds, get_tool_path, motivo_non_pronto, parse_settings, load_settings, save_settings,
     aggiungi_strumenti_al_path, strumento_presente, scarica_ytdlp, miniatura_video, RIGA_TXT,
+    LOG, avvia_log_tecnico, cartella_log,
 )
+
+VERSIONE = "1.4.1"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
@@ -1397,7 +1400,7 @@ class SpotCutterApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self._ytdlp_in_scarico, self._ytdlp_dopo = False, None
-        self.setWindowTitle("Spot Cutter - Organizzatore Spot TV")
+        self.setWindowTitle(f"Spot Cutter {VERSIONE} - Organizzatore Spot TV")
         self.setWindowIcon(QIcon(resource_path("Spot_Cutter.ico")))
         self.resize(1200, 900)
         self.setMinimumSize(1000, 700)
@@ -2031,6 +2034,8 @@ class SpotCutterApp(QMainWindow):
         menu_altro = QMenu(btn_altro)
         menu_altro.addAction("Salva la coda in un file…", self._on_save_session)
         menu_altro.addAction("Carica una coda da un file…", self._on_load_session)
+        menu_altro.addSeparator()
+        menu_altro.addAction("Apri il log tecnico", self._apri_log_tecnico)
         btn_altro.setMenu(menu_altro)
         testata.addWidget(btn_altro, alignment=Qt.AlignmentFlag.AlignBottom)
         layout.addLayout(testata)
@@ -2339,6 +2344,14 @@ class SpotCutterApp(QMainWindow):
                 except RuntimeError:   # card già sostituita da un ridisegno
                     pass
 
+    def _apri_log_tecnico(self):
+        """Apre il file del log tecnico (o la sua cartella, se il file non c'è ancora)."""
+        path = os.path.join(cartella_log(), "spotcutter.log")
+        try:
+            os.startfile(path if os.path.exists(path) else cartella_log())
+        except OSError as e:
+            self._on_log(f"⚠️ Impossibile aprire il log tecnico ({path}): {e}", "orange")
+
     def _on_filtro(self, chiave: str):
         """Mostra tutti i video, solo i pronti o solo quelli da sistemare (senza txt o data)."""
         self._filtro = chiave
@@ -2410,6 +2423,7 @@ class SpotCutterApp(QMainWindow):
     @Slot(str, str)
     def _on_log(self, msg: str, color: str):
         """Aggiunge una riga al log con il colore specificato."""
+        LOG.log({"red": 40, "orange": 30}.get(color.lower(), 20), msg)
         cursor = self._log.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
@@ -3369,6 +3383,8 @@ class SpotCutterApp(QMainWindow):
                 "Metti ffmpeg.exe e ffprobe.exe nella cartella del programma "
                 "o nella sottocartella bin/, oppure aggiungili al PATH di sistema.")
 
+        LOG.info("strumenti: ffmpeg=%s | ffprobe=%s | yt-dlp=%s", get_tool_path("ffmpeg"),
+                 get_tool_path("ffprobe"), get_tool_path("yt-dlp"))
         if strumento_presente("yt-dlp"):
             threading.Thread(target=self._update_ytdlp, daemon=True).start()
         elif self.settings_storage.value("ytdlp_rifiutato", False, type=bool):
@@ -3534,7 +3550,31 @@ class SpotCutterApp(QMainWindow):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+def _avvia_log():
+    """Accende il log tecnico e ci manda anche gli errori imprevisti, che altrimenti si perdono."""
+    import platform, traceback
+    from PySide6 import __version__ as versione_qt
+    from PySide6.QtCore import qInstallMessageHandler
+    path = avvia_log_tecnico()
+    LOG.info("=" * 70)
+    LOG.info("Spot Cutter %s avviato | %s %s | Python %s | PySide6 %s | %s", VERSIONE, platform.system(),
+             platform.version(), platform.python_version(), versione_qt,
+             "programma compilato" if getattr(sys, "frozen", False) else "dal codice")
+
+    def imprevisto(tipo, valore, tb):
+        LOG.error("ERRORE IMPREVISTO\n%s", "".join(traceback.format_exception(tipo, valore, tb)))
+        sys.__excepthook__(tipo, valore, tb)
+    sys.excepthook = imprevisto
+    threading.excepthook = lambda a: LOG.error(
+        "ERRORE IMPREVISTO in un thread (%s)\n%s", a.thread.name if a.thread else "?",
+        "".join(traceback.format_exception(a.exc_type, a.exc_value, a.exc_traceback)))
+    # avvisi ed errori di Qt (es. operazioni sulla finestra fatte dal thread sbagliato)
+    qInstallMessageHandler(lambda modo, contesto, messaggio: LOG.warning("Qt: %s", messaggio))
+    return path
+
+
 if __name__ == "__main__":
+    _avvia_log()
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
     os.environ["QT_FONT_DPI"] = "96"
     os.environ["QT_USE_DIRECTWRITE"] = "1"
@@ -3542,4 +3582,6 @@ if __name__ == "__main__":
     app.setFont(QFont("Segoe UI", 11))
     win = SpotCutterApp()
     win.show()
-    sys.exit(app.exec())
+    codice = app.exec()
+    LOG.info("Spot Cutter chiuso (codice %s)", codice)
+    sys.exit(codice)

@@ -26,7 +26,7 @@ def get_ytdlp_path() -> str:
 from utils import (
     get_seconds, get_unique_filename, get_video_duration,
     safe_kill_process, kill_process_tree, ESTENSIONI_VIDEO, TEMP_MASTER_FILE,
-    get_tool_path, RIGA_TXT, righe_txt_ignorate, righe_txt_fuori_ordine, motivo_non_pronto
+    get_tool_path, RIGA_TXT, righe_txt_ignorate, righe_txt_fuori_ordine, motivo_non_pronto, LOG
 )
 
 # Saturazione media (0-~180) sopra la quale un fotogramma scuro non è nero ma contenuto:
@@ -1346,6 +1346,7 @@ class VideoEngine:
         if ritardo_audio:
             cmd += ['-bsf:a', f"setts=pts=PTS+{ritardo_audio:.2f}/TB:dts=DTS+{ritardo_audio:.2f}/TB"]
         cmd.append(out_f)
+        LOG.debug("taglio: %s", " ".join(cmd))
         try:
             p_cut = await asyncio.create_subprocess_exec(*cmd, creationflags=c_flags)
             # Registra il processo nella lista condivisa del batch (thread-safe per asyncio)
@@ -1770,6 +1771,30 @@ class VideoEngine:
             "orange" if esito["interrotta"] or esito["errori"] else "green")
         return esito
 
+    # Errori di yt-dlp per cui riprovare non serve
+    _ERRORI_DEFINITIVI = ("video unavailable", "private video", "has been removed", "is not available",
+                          "copyright", "account associated with this video has been terminated")
+
+    @staticmethod
+    def _motivo_ytdlp(righe_errore: list, codice: int) -> str:
+        """Il motivo di un fallimento di yt-dlp in parole chiare, dal suo messaggio d'errore."""
+        errori = [r for r in righe_errore if r.upper().startswith("ERROR")] or righe_errore
+        if not errori:
+            return f"yt-dlp si è chiuso con codice {codice}, senza dire perché"
+        testo = re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?", "", errori[-1]).strip()
+        basso = testo.lower()
+        if "403" in basso:
+            return "YouTube ha rifiutato di continuare il download (errore 403)"
+        if "429" in basso or "too many requests" in basso:
+            return "YouTube sta limitando le richieste (errore 429): aspetta qualche minuto"
+        if "sign in to confirm" in basso:
+            return "YouTube chiede una verifica (\"Sign in to confirm\"): aspetta qualche minuto e riprova"
+        if any(x in basso for x in ("getaddrinfo", "timed out", "connection", "urlopen error", "network")):
+            return f"problema di connessione ({testo[:120]})"
+        if "video unavailable" in basso or "private video" in basso or "removed" in basso:
+            return f"il video non è disponibile su YouTube ({testo[:120]})"
+        return testo[:200]
+
     # ── DOWNLOAD YOUTUBE ──────────────────────────────────────────────────
     async def download_youtube(self, url: str, output_dir: str, state: dict,
                                generate_txt: bool = True) -> list[tuple[str, str | None]] | None:
@@ -1817,69 +1842,108 @@ class VideoEngine:
         video_title   = "video"
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,  # yt-dlp manda tutto su stdout
-                stderr=asyncio.subprocess.PIPE,  # teniamo aperto per sicurezza
-                creationflags=c_flags
-            )
-            self._current_proc = process
+            # YouTube ogni tanto interrompe un download a metà (errore 403): rilanciando,
+            # yt-dlp chiede un collegamento nuovo e riprende dal pezzo già scaricato
+            TENTATIVI = 3
+            LOG.info("yt-dlp: %s", " ".join(cmd))
+            for tentativo in range(1, TENTATIVI + 1):
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,  # yt-dlp manda tutto su stdout
+                    stderr=asyncio.subprocess.PIPE,  # teniamo aperto per sicurezza
+                    creationflags=c_flags
+                )
+                self._current_proc = process
 
-            async def _read_progress():
-                nonlocal logged_start, video_title
-                if process.stdout is None:
-                    return
-                buf = b""
-                while True:
+                async def _read_progress():
+                    nonlocal logged_start, video_title
+                    if process.stdout is None:
+                        return
+                    buf = b""
+                    while True:
+                        if not state.get("running", True):
+                            break
+                        # Timeout: lo Stop deve funzionare anche se yt-dlp resta in silenzio
+                        try:
+                            chunk = await asyncio.wait_for(process.stdout.read(256), timeout=0.5)
+                        except asyncio.TimeoutError:
+                            continue
+                        if not chunk:
+                            break
+                        buf += chunk
+                        # Splitta su \r e \n — yt-dlp usa \r per sovrascrivere la riga
+                        while b"\r" in buf or b"\n" in buf:
+                            for sep in (b"\r", b"\n"):
+                                if sep in buf:
+                                    line_b, buf = buf.split(sep, 1)
+                                    line = line_b.decode("utf-8", errors="replace").strip()
+                                    if not line:
+                                        continue
+                                    if "Destination:" in line:
+                                        # Cattura il nome file dalla riga "Destination: /path/NomeVideo.mp4"
+                                        dest = line.split("Destination:")[-1].strip()
+                                        base = os.path.splitext(os.path.basename(dest))[0]
+                                        video_title = re.sub(r'\.\w+\d+$', '', base)
+                                    if "[download]" in line and "%" in line:
+                                        if not logged_start:
+                                            await self.log(f"⬇️ Download: {video_title}", "yellow")
+                                            logged_start = True
+                                        m = re.search(r"([\d.]+)%", line)
+                                        if m:
+                                            try:
+                                                p = float(m.group(1)) / 100.0
+                                                await self.progress(p, f"{self._prefisso_progresso}⬇️ {int(p * 100)}% — {video_title}")
+                                            except ValueError:
+                                                pass
+                                    break
+
+                # I messaggi d'errore di yt-dlp arrivano su stderr: si leggono mentre scarica,
+                # per sapere il motivo vero di un fallimento (e per non bloccare il processo)
+                righe_errore = []
+
+                async def _read_errori():
+                    if process.stderr is None:
+                        return
+                    while True:
+                        riga = await process.stderr.readline()
+                        if not riga:
+                            break
+                        testo = riga.decode("utf-8", errors="replace").strip()
+                        if testo:
+                            righe_errore.append(testo)
+                            LOG.warning("yt-dlp: %s", testo)
+
+                lettura_errori = asyncio.ensure_future(_read_errori())
+                await _read_progress()
+                if not state.get("running", True):
+                    await kill_process_tree(process)
+                await process.wait()
+                try:
+                    await asyncio.wait_for(lettura_errori, 5)
+                except (asyncio.TimeoutError, Exception):
+                    lettura_errori.cancel()
+                self._current_proc = None
+
+                if not state.get("running", True):
+                    await self.log("🛑 Download interrotto.", "orange")
+                    return None
+
+                if process.returncode == 0:
+                    break
+                motivo = self._motivo_ytdlp(righe_errore, process.returncode)
+                definitivo = any(x in " ".join(righe_errore).lower() for x in self._ERRORI_DEFINITIVI)
+                if tentativo == TENTATIVI or definitivo:
+                    await self.log(f"❌ Download non riuscito"
+                                   + (f" dopo {tentativo} tentativi" if tentativo > 1 else "")
+                                   + f": {motivo}", "red")
+                    return None
+                await self.log(f"⚠️ Download interrotto: {motivo}. Riprovo fra 5 secondi "
+                               f"(tentativo {tentativo + 1} di {TENTATIVI})...", "orange")
+                for _ in range(10):
                     if not state.get("running", True):
-                        break
-                    # Timeout: lo Stop deve funzionare anche se yt-dlp resta in silenzio
-                    try:
-                        chunk = await asyncio.wait_for(process.stdout.read(256), timeout=0.5)
-                    except asyncio.TimeoutError:
-                        continue
-                    if not chunk:
-                        break
-                    buf += chunk
-                    # Splitta su \r e \n — yt-dlp usa \r per sovrascrivere la riga
-                    while b"\r" in buf or b"\n" in buf:
-                        for sep in (b"\r", b"\n"):
-                            if sep in buf:
-                                line_b, buf = buf.split(sep, 1)
-                                line = line_b.decode("utf-8", errors="replace").strip()
-                                if not line:
-                                    continue
-                                if "Destination:" in line:
-                                    # Cattura il nome file dalla riga "Destination: /path/NomeVideo.mp4"
-                                    dest = line.split("Destination:")[-1].strip()
-                                    base = os.path.splitext(os.path.basename(dest))[0]
-                                    video_title = re.sub(r'\.\w+\d+$', '', base)
-                                if "[download]" in line and "%" in line:
-                                    if not logged_start:
-                                        await self.log(f"⬇️ Download: {video_title}", "yellow")
-                                        logged_start = True
-                                    m = re.search(r"([\d.]+)%", line)
-                                    if m:
-                                        try:
-                                            p = float(m.group(1)) / 100.0
-                                            await self.progress(p, f"{self._prefisso_progresso}⬇️ {int(p * 100)}% — {video_title}")
-                                        except ValueError:
-                                            pass
-                                break
-
-            await _read_progress()
-            if not state.get("running", True):
-                await kill_process_tree(process)
-            await process.wait()
-            self._current_proc = None
-
-            if not state.get("running", True):
-                await self.log("🛑 Download interrotto.", "orange")
-                return None
-
-            if process.returncode != 0:
-                await self.log(f"⚠️ yt-dlp terminato con codice {process.returncode}.", "red")
-                return None
+                        await self.log("🛑 Download interrotto.", "orange")
+                        return None
+                    await asyncio.sleep(0.5)
 
             await self.progress(1.0, "Download completato.")
             await self.log("✅ Download completato.", "green")

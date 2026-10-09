@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import asyncio
 import atexit
+import logging
 from datetime import datetime
 
 # ── COSTANTI ──────────────────────────────────────────────────────────────
@@ -20,6 +21,31 @@ SETTINGS_DEFAULTS = {
     "toll": "2.0", "bth": "0.1", "bdur": "0.1",
     "parallel_cuts": "0", "auto_start_after_yt": False, "use_master": False
 }
+
+# ── LOG TECNICO ───────────────────────────────────────────────────────────
+# Tutto ciò che passa nel log della finestra, più i dettagli che lì non entrano (errori
+# completi di yt-dlp, comandi lanciati, errori imprevisti), in un file con data e ora.
+# Finché avvia_log_tecnico() non viene chiamata (prove, tools) i messaggi si perdono.
+LOG = logging.getLogger("spotcutter")
+LOG.addHandler(logging.NullHandler())
+LOG_MAX_BYTE = 5 * 1024 * 1024   # il file non supera i 5 MB; se ne tiene uno solo precedente
+
+def cartella_log() -> str:
+    return os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "SpotCutter")
+
+def avvia_log_tecnico() -> str:
+    """Accende il log su file (spotcutter.log, più spotcutter.log.1 quando si riempie). Ritorna il percorso."""
+    from logging.handlers import RotatingFileHandler
+    path = os.path.join(cartella_log(), "spotcutter.log")
+    try:
+        os.makedirs(cartella_log(), exist_ok=True)
+        h = RotatingFileHandler(path, maxBytes=LOG_MAX_BYTE, backupCount=1, encoding="utf-8")
+        h.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-7s  %(message)s", "%d-%m-%Y %H:%M:%S"))
+        LOG.addHandler(h)
+        LOG.setLevel(logging.DEBUG)
+    except OSError:
+        pass   # senza log il programma funziona lo stesso
+    return path
 
 # ── RICERCA ESEGUIBILI ESTERNI ────────────────────────────────────────────
 def _get_base_dir() -> str:
