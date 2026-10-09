@@ -5,6 +5,23 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.4.2
+
+### 🔧 Miglioramenti / Improvements
+
+- 🇮🇹 **La stima del lavoro conta solo i video pronti** — il riepilogo sopra la coda stimava il lavoro su tutti i video, anche quelli senza txt o senza data che vengono saltati. Ora la durata resta quella di tutta la coda, ma la stima riguarda solo i video pronti e lo dice ("lavoro: circa 22m per i 6 pronti"). Le durate non vengono più rilette a ogni ridisegno della coda: si usano quelle già lette per le card
+- 🇬🇧 **The work estimate counts only the ready videos** — the summary above the queue estimated the work on all videos, including those without a txt or a date, which are skipped. Now the length is still that of the whole queue, but the estimate covers only the ready videos and says so ("work: about 22m for the 6 ready"). Lengths are no longer read again at every queue redraw: those already read for the cards are used
+
+- 🇮🇹 **Il motivo di un taglio fallito** — se ffmpeg non riesce a creare un clip, il log della finestra ora aggiunge al codice anche il motivo ("…: nome.mkv — No space left on device") e il log tecnico riporta il messaggio completo di ffmpeg. Il comando di taglio è lo stesso di prima
+- 🇬🇧 **The reason for a failed cut** — if ffmpeg cannot create a clip, the window log now adds the reason to the code ("…: name.mkv — No space left on device") and the technical log holds the full ffmpeg message. The cut command is the same as before
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **Avvio da un terminale non UTF-8** — lanciando il programma da alcuni terminali di Windows, una scritta di servizio con un'emoji poteva farlo chiudere subito. Quelle scritte ora vanno nel log tecnico, e una console che non sa scrivere un carattere non ferma più il programma
+- 🇬🇧 **Starting from a non-UTF-8 terminal** — when launching the program from some Windows terminals, a service message with an emoji could make it close at once. Those messages now go to the technical log, and a console that cannot write a character no longer stops the program
+
+---
+
 ## 🎬 Spot Cutter 1.4.1
 
 ### ✨ Nuove funzionalità / New features

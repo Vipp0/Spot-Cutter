@@ -53,7 +53,7 @@ from utils import (
     LOG, avvia_log_tecnico, cartella_log,
 )
 
-VERSIONE = "1.4.1"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
+VERSIONE = "1.4.2"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
@@ -1491,36 +1491,42 @@ class SpotCutterApp(QMainWindow):
         QTimer.singleShot(1200, self._proponi_ripresa_sessione)
 
     def _update_duration_label(self):
-        """Calcola in background la durata totale dei video in coda."""
+        """
+        Riepilogo sopra la coda: quanti video, quanto durano e la stima del lavoro. Le durate
+        sono quelle lette in sottofondo per le card (vedi _carica_info_video): finché non ci
+        sono tutte si scrive che si sta calcolando, e all'arrivo di ognuna si ripassa di qui.
+        """
         queue = self.state.get("queue_files", [])
-        current_dir = self.state.get("current_dir", "")
+        cartella = self.state.get("current_dir", "")
         if not queue:
             self._lbl_duration.setText("Nessun video")
             return
-        self._lbl_duration.setText(f"{len(queue)} video · calcolo della durata…")
+        durate = {v: self._info_video.get(os.path.join(cartella, v)) for v, _, _ in queue}
+        if any(d is None for d in durate.values()):
+            self._lbl_duration.setText(f"{len(queue)} video · calcolo della durata…")
+            return
+        non_pronti = {v for v, _ in self._non_pronti()}
+        self._on_duration_ready(sum(d[0] for d in durate.values()), len(queue),
+                                sum(d[0] for v, d in durate.items() if v not in non_pronti),
+                                len(queue) - len(non_pronti))
 
-        def _worker():
-            total = 0.0
-            for vid, _, _ in queue:
-                path = os.path.join(current_dir, vid)
-                total += get_video_duration(path)
-            # Torna sul thread UI via segnale
-            self._sig_duration.emit(total, len(queue))
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    def _on_duration_ready(self, total: float, count: int):
-        """Aggiorna il label durata sul thread UI."""
+    def _on_duration_ready(self, total: float, count: int, da_lavorare: float | None = None,
+                           pronti: int | None = None):
+        """Scrive il riepilogo. La stima del lavoro riguarda solo i video pronti: gli altri si saltano."""
         def hm(sec):
             h, m = int(sec) // 3600, (int(sec) % 3600) // 60
             return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
+        da_lavorare = total if da_lavorare is None else da_lavorare
+        pronti = count if pronti is None else pronti
         testo = f"{count} video · {hm(total)} di video"
         # Tempo di lavoro: dalla velocità misurata su questo computer nelle elaborazioni
         # fatte finora, con o senza master secondo l'opzione attiva. Niente misura, niente stima.
         velocita = self.settings_storage.value(self._chiave_velocita(), 0.0, type=float)
-        if velocita > 0 and total > 0:
-            lavoro = total * velocita
+        if velocita > 0 and da_lavorare > 0:
+            lavoro = da_lavorare * velocita
             testo += " · lavoro: " + ("meno di 1m" if lavoro < 60 else f"circa {hm(lavoro + 30)}")
+            if pronti < count:
+                testo += f" per {'il video pronto' if pronti == 1 else f'i {pronti} pronti'}"
         self._lbl_duration.setText(testo)
 
     def _chiave_velocita(self, master: bool | None = None) -> str:
@@ -1751,11 +1757,11 @@ class SpotCutterApp(QMainWindow):
                     # FORZA IL REFRESH: Questo dice a Qt di rileggere i nomi degli oggetti
                     self.style().unpolish(self)
                     self.style().polish(self)
-                    print(f"✅ Stile caricato correttamente da {file_name}")
+                    LOG.info("stile caricato da %s", file_name)
             else:
-                print(f"⚠️ Attenzione: {file_name} non trovato!")
+                LOG.warning("stile non trovato: %s", file_name)
         except Exception as e:
-            print(f"❌ Errore nel caricamento dello stile: {e}")
+            LOG.error("errore nel caricamento dello stile: %s", e)
 
         # ── Drag & Drop Logic ──────────────────────────────────────────────────
     def dragEnterEvent(self, event):
@@ -2343,6 +2349,7 @@ class SpotCutterApp(QMainWindow):
                     card.set_durata(durata)
                 except RuntimeError:   # card già sostituita da un ridisegno
                     pass
+        self._update_duration_label()
 
     def _apri_log_tecnico(self):
         """Apre il file del log tecnico (o la sua cartella, se il file non c'è ancora)."""
@@ -3256,7 +3263,7 @@ class SpotCutterApp(QMainWindow):
             # Qui viene creata la variabile info
             info = loop.run_until_complete(engine.get_url_info(url))
         except Exception as e:
-            print(f"Errore analisi YT: {e}") # Per debug tuo a terminale
+            LOG.error("errore nell'analisi del link YouTube: %s", e)
             info = None
         finally:
             loop.close()
@@ -3574,6 +3581,13 @@ def _avvia_log():
 
 
 if __name__ == "__main__":
+    # Una console non UTF-8 (alcuni terminali di Windows) non deve far chiudere il programma
+    # per un carattere che non sa scrivere
+    for flusso in (sys.stdout, sys.stderr):
+        try:
+            flusso.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     _avvia_log()
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
     os.environ["QT_FONT_DPI"] = "96"

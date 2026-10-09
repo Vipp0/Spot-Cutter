@@ -1347,8 +1347,12 @@ class VideoEngine:
             cmd += ['-bsf:a', f"setts=pts=PTS+{ritardo_audio:.2f}/TB:dts=DTS+{ritardo_audio:.2f}/TB"]
         cmd.append(out_f)
         LOG.debug("taglio: %s", " ".join(cmd))
+        # Quello che ffmpeg scrive va in un file temporaneo: il comando resta identico, ma se il
+        # taglio fallisce si può leggere il perché (prima si sapeva solo il codice d'uscita)
+        import tempfile
+        uscita_ff = tempfile.TemporaryFile()
         try:
-            p_cut = await asyncio.create_subprocess_exec(*cmd, creationflags=c_flags)
+            p_cut = await asyncio.create_subprocess_exec(*cmd, stderr=uscita_ff, creationflags=c_flags)
             # Registra il processo nella lista condivisa del batch (thread-safe per asyncio)
             if proc_list is not None:
                 proc_list.append(p_cut)
@@ -1378,8 +1382,14 @@ class VideoEngine:
                 self._current_proc = None
 
             if p_cut.returncode != 0:
+                uscita_ff.seek(0)
+                righe = [r.strip() for r in uscita_ff.read().decode("utf-8", errors="replace").splitlines()
+                         if r.strip() and not r.lstrip().startswith(("frame=", "size="))]
+                LOG.error("ffmpeg, taglio non riuscito (codice %s) per %s:\n%s", p_cut.returncode,
+                          out_f, "\n".join(righe[-25:]))
+                motivo = f" — {righe[-1][:160]}" if righe else ""
                 await self.log(
-                    f"⚠️ FFmpeg errore (code {p_cut.returncode}): {os.path.basename(out_f)}",
+                    f"⚠️ FFmpeg errore (code {p_cut.returncode}): {os.path.basename(out_f)}{motivo}",
                     "red"
                 )
                 await self._scarta_parziale(out_f)
@@ -1391,6 +1401,8 @@ class VideoEngine:
             if proc_list is None:
                 self._current_proc = None
             return False
+        finally:
+            uscita_ff.close()
         
     # ── RILEVAMENTO CANALE ────────────────────────────────────────────────
     CANALI = [

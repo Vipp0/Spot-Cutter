@@ -396,4 +396,4 @@ def save_settings(crf, cusc_i, cusc_f, toll, bth, bdur, parallel_cuts="0",
                        "parallel_cuts": str(parallel_cuts),
                        "auto_start_after_yt": auto_start_after_yt,
                        "use_master": use_master}, f, indent=2)
-    except Exception as e: print(f"⚠️ Errore settings: {e}")
+    except Exception as e: LOG.error("errore nel salvataggio delle impostazioni: %s", e)
