@@ -1,0 +1,15 @@
+{
+  "_nota": "Le novità mostrate al primo avvio di ogni versione: poche voci, titolo e due righe. tipo = nuovo | grafica | migliorato | corretto",
+  "1.5.0": [
+    {"tipo": "nuovo", "titolo": "Aggiornamento automatico",
+     "testo": "Quando esce una nuova versione, Spot Cutter te la propone all'avvio, la scarica e si installa da solo. Coda, impostazioni, libreria e yt-dlp restano come sono."},
+    {"tipo": "grafica", "titolo": "Storico ridisegnato",
+     "testo": "Video raggruppati per anno, ricerca per titolo o canale, e selezione di più video insieme, anche con Shift + clic, per toglierli in un colpo solo."},
+    {"tipo": "nuovo", "titolo": "Gli spot di ogni video nello storico",
+     "testo": "Lo storico ricorda i clip creati: li vedi sotto ogni video e li apri con un doppio clic. Se rifai un video, puoi spostare i vecchi clip nel Cestino."},
+    {"tipo": "grafica", "titolo": "Schermata di avvio",
+     "testo": "Logo e avanzamento tra il doppio clic e la finestra, e anche mentre un aggiornamento si installa."},
+    {"tipo": "migliorato", "titolo": "Le novità a ogni versione",
+     "testo": "Dopo ogni aggiornamento questa schermata ti dice cosa è cambiato. La rivedi quando vuoi dal menu ⋯ sopra la coda."}
+  ]
+}

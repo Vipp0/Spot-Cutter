@@ -60,7 +60,7 @@
 2. Estrai la cartella `SpotCutter` / Extract the `SpotCutter` folder
 3. Metti `ffmpeg.exe` e `ffprobe.exe` nella cartella `bin/` (non serve se ffmpeg è già nel PATH di sistema); `yt-dlp.exe` lo scarica il programma al primo avvio / Place `ffmpeg.exe` and `ffprobe.exe` in the `bin/` folder (not needed if ffmpeg is already in the system PATH); `yt-dlp.exe` is downloaded by the program at first launch
 4. Avvia `SpotCutter.exe` / Launch `SpotCutter.exe`
-5. 🇮🇹 Dalla 1.4.3 il programma si aggiorna da solo: quando esce una nuova versione la propone all'avvio / 🇬🇧 From 1.4.3 the program updates itself: when a new version comes out it offers it at startup
+5. 🇮🇹 Dalla 1.5.0 il programma si aggiorna da solo: quando esce una nuova versione la propone all'avvio / 🇬🇧 From 1.5.0 the program updates itself: when a new version comes out it offers it at startup
 
 ### Da sorgente / From source
 ```bash

@@ -930,3 +930,20 @@ QDialog QPushButton#btn_pericolo:disabled {
     color: #B8C0C9;
     border-color: #E4E7EB;
 }
+
+/* ── NOVITÀ ─────────────────────────────────────────────────────────────── */
+QWidget#novita_contenuto { background-color: #FFFFFF; }
+QFrame#card_novita {
+    background-color: #FFFFFF;
+    border: 1px solid #E4E7EB;
+    border-radius: 12px;
+}
+QLabel#novita_titolo {
+    color: #1F2933;
+    font-size: 14px;
+    font-weight: 600;
+}
+QLabel#novita_testo {
+    color: #52606D;
+    font-size: 13px;
+}

@@ -20,6 +20,7 @@ import threading
 import subprocess
 import glob
 import html
+import tempfile
 
 from datetime import datetime
 
@@ -75,6 +76,7 @@ _GLIFI = {
     "incolla": "\ue77f", "salva": "\ue74e", "apri": "\ue8e5", "su": "\ue70e", "giu": "\ue70d",
     "forbici": "\ue8c6", "chiudi": "\ue711", "cerca": "\ue721", "espandi": "\ue740",
     "indietro": "\ue892", "avanti": "\ue893", "altro": "\ue712",
+    "stella": "\ue734", "colore": "\ue790", "ripara": "\ue90f", "migliora": "\ue9f5",
 }
 _font_icone_trovato = []
 
@@ -1227,6 +1229,105 @@ class StoricoDialog(QDialog):
         self._load()
 
 
+class NovitaDialog(QDialog):
+    """Le novità delle versioni appena installate (da novita.json, incluso nel programma)."""
+    STILI = {   # tipo -> (icona, colore dell'icona, fondo del cerchio, etichetta)
+        "nuovo":      ("stella",   "#1E8449", "#E3F3E8", "Novità"),
+        "grafica":    ("colore",   "#6B4FC4", "#EEEAFB", "Grafica"),
+        "migliorato": ("migliora", "#134A7C", "#E1EDF8", "Migliorato"),
+        "corretto":   ("ripara",   "#8A5200", "#FDEBCF", "Corretto"),
+    }
+
+    def __init__(self, versioni: list, voci: list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Novità di Spot Cutter")
+        self.setModal(True)
+        self.resize(600, 700)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(14)
+
+        testata = QHBoxLayout()
+        testata.setSpacing(14)
+        logo = QLabel()
+        pm = QPixmap(resource_path("Spot_cutter_logo.png"))
+        if not pm.isNull():
+            pm = pm.scaledToWidth(112, Qt.TransformationMode.SmoothTransformation)
+            pm.setDevicePixelRatio(2)
+            logo.setPixmap(pm)
+        testata.addWidget(logo, alignment=Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        titolo = QLabel(f"Benvenuto in Spot Cutter {versioni[-1]}")
+        titolo.setObjectName("titolo_coda")
+        sotto = QLabel("Ecco cosa c'è di nuovo" + (f" dalla versione {versioni[0]}" if len(versioni) > 1 else "") + ".")
+        sotto.setObjectName("lbl_riepilogo")
+        col.addWidget(titolo)
+        col.addWidget(sotto)
+        col.addStretch()
+        testata.addLayout(col, stretch=1)
+        layout.addLayout(testata)
+
+        scorri = QScrollArea()
+        scorri.setWidgetResizable(True)
+        scorri.setFrameShape(QFrame.Shape.NoFrame)
+        scorri.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        contenuto = QWidget()
+        contenuto.setObjectName("novita_contenuto")
+        elenco = QVBoxLayout(contenuto)
+        elenco.setContentsMargins(0, 0, 6, 0)
+        elenco.setSpacing(10)
+        for voce in voci:
+            elenco.addWidget(self._card(voce))
+        elenco.addStretch()
+        scorri.setWidget(contenuto)
+        layout.addWidget(scorri, stretch=1)
+
+        piede = QHBoxLayout()
+        nota = QLabel("Puoi rivederle quando vuoi dal menu ⋯ sopra la coda.")
+        nota.setObjectName("lbl_riepilogo")
+        piede.addWidget(nota, stretch=1)
+        btn = QPushButton("Inizia")
+        btn.setDefault(True)
+        btn.setMinimumWidth(110)
+        btn.clicked.connect(self.accept)
+        piede.addWidget(btn)
+        layout.addLayout(piede)
+
+    def _card(self, voce: dict) -> QFrame:
+        nome_icona, colore, fondo, etichetta = self.STILI.get(voce.get("tipo"), self.STILI["nuovo"])
+        card = QFrame()
+        card.setObjectName("card_novita")
+        riga = QHBoxLayout(card)
+        riga.setContentsMargins(16, 14, 16, 14)
+        riga.setSpacing(14)
+        cerchio = QLabel(glifo(nome_icona, "★"))
+        cerchio.setFixedSize(40, 40)
+        cerchio.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cerchio.setStyleSheet(f"background-color: {fondo}; color: {colore}; border-radius: 20px; "
+                              "font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 17px;")
+        riga.addWidget(cerchio, alignment=Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(3)
+        testa = QHBoxLayout()
+        testa.setSpacing(8)
+        t = QLabel(voce.get("titolo", ""))
+        t.setObjectName("novita_titolo")
+        tag = QLabel(etichetta)
+        tag.setStyleSheet(f"background-color: {fondo}; color: {colore}; border-radius: 8px; "
+                          "padding: 1px 8px; font-size: 11px; font-weight: 600;")
+        testa.addWidget(t)
+        testa.addWidget(tag, alignment=Qt.AlignmentFlag.AlignVCenter)
+        testa.addStretch()
+        col.addLayout(testa)
+        d = QLabel(voce.get("testo", ""))
+        d.setObjectName("novita_testo")
+        d.setWordWrap(True)
+        col.addWidget(d)
+        riga.addLayout(col, stretch=1)
+        return card
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # DIALOG TAGLI MANUALI CON BLACKDETECT
 # ══════════════════════════════════════════════════════════════════════════
@@ -1718,7 +1819,12 @@ class SpotCutterApp(QMainWindow):
         self._aggiornamento_in_attesa = None
         self._chiusura_per_aggiornamento = False
         esito = aggiornamento.esito_precedente()
+        self._appena_aggiornato = bool(esito)    # la coda si riprende senza chiedere
+        QTimer.singleShot(1800, self._mostra_novita)
         if esito:
+            # pulizia di quanto scaricato ed estratto per l'aggiornamento
+            QTimer.singleShot(5000, lambda: shutil.rmtree(
+                os.path.join(tempfile.gettempdir(), "SpotCutter_aggiornamento"), ignore_errors=True))
             QTimer.singleShot(300, lambda: self._on_log(
                 f"✅ Spot Cutter aggiornato alla versione {esito.split(' ', 1)[1]}." if esito.startswith("ok ")
                 else f"⚠️ L'ultimo aggiornamento non è riuscito ({esito.split(' ', 1)[-1]}): "
@@ -1927,7 +2033,12 @@ class SpotCutterApp(QMainWindow):
                 with open(path, "r", encoding="utf-8") as f:
                     session = json.load(f)
                 n = len(session.get("queue", []))
-                if n:
+                if n and getattr(self, "_appena_aggiornato", False):
+                    # dopo un aggiornamento la coda è quella di un minuto fa: si riprende e basta
+                    self._sessione_auto_pronta = True
+                    self._applica_sessione(session)
+                    self._on_log(f"📂 Coda ripresa dopo l'aggiornamento: {n} video.", "green")
+                elif n:
                     cartella = session.get("current_dir", "")
                     dove = f" dalla cartella\n{cartella}" if cartella else ""
                     box = QMessageBox(self)
@@ -2276,6 +2387,7 @@ class SpotCutterApp(QMainWindow):
         menu_altro.addAction("Carica una coda da un file…", self._on_load_session)
         menu_altro.addSeparator()
         menu_altro.addAction("Controlla aggiornamenti", lambda: self._controlla_aggiornamenti(manuale=True))
+        menu_altro.addAction("Novità di questa versione", lambda: self._mostra_novita(sempre=True))
         menu_altro.addAction("Apri il log tecnico", self._apri_log_tecnico)
         btn_altro.setMenu(menu_altro)
         testata.addWidget(btn_altro, alignment=Qt.AlignmentFlag.AlignBottom)
@@ -2685,9 +2797,38 @@ class SpotCutterApp(QMainWindow):
             self._on_log(f"❌ Aggiornamento non riuscito: {e}", "red")
             LOG.exception("preparazione dell'aggiornamento")
             return
+        self._salva_sessione_auto()   # la coda si ritrova uguale alla riapertura
         LOG.info("aggiornamento alla %s: il programma si chiude per sostituire i file", self._versione_in_arrivo)
         self._chiusura_per_aggiornamento = True
         self.close()
+
+    def _mostra_novita(self, sempre: bool = False):
+        """
+        Al primo avvio di una versione nuova (o a richiesta), le novità delle versioni che non
+        si sono ancora viste: dopo l'ultima vista fino a quella in uso.
+        """
+        vista = str(self.settings_storage.value("ultima_versione_vista", "") or "")
+        if not sempre and vista == VERSIONE:
+            return
+        try:
+            with open(resource_path("novita.json"), "r", encoding="utf-8") as f:
+                tutte = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+        except (OSError, ValueError):
+            tutte = {}
+        if sempre or not vista:
+            versioni = [VERSIONE] if VERSIONE in tutte else []
+        else:
+            versioni = sorted((v for v in tutte if aggiornamento.piu_nuova(v, vista)
+                               and not aggiornamento.piu_nuova(v, VERSIONE)), key=aggiornamento._numeri)
+        self.settings_storage.setValue("ultima_versione_vista", VERSIONE)
+        voci = [voce for v in reversed(versioni) for voce in tutte[v]]
+        if not voci:
+            if sempre:
+                QMessageBox.information(self, "Novità", f"Nessuna nota per la versione {VERSIONE}.")
+            return
+        if self.state.get("running") and not sempre:
+            return
+        NovitaDialog(versioni, voci, self).exec()
 
     def _apri_log_tecnico(self):
         """Apre il file del log tecnico (o la sua cartella, se il file non c'è ancora)."""

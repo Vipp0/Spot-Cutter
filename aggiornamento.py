@@ -206,6 +206,16 @@ def avvia_sostituzione(zip_path: str, versione: str, app: str | None = None, pid
                   if "SpotCutter.exe" in files and os.path.isdir(os.path.join(radice, "_internal"))), None)
     if not nuova:
         raise RuntimeError("il pacchetto non contiene SpotCutter.exe e la cartella _internal")
+    # Di solito installa la versione nuova stessa (avvio.py --installa), mostrando la schermata
+    # di caricamento con l'avanzamento; lo script PowerShell resta come riserva
+    if riapri and sys.platform == "win32":
+        try:
+            subprocess.Popen([os.path.join(nuova, "SpotCutter.exe"), "--installa", app,
+                              "--pid", str(int(pid or os.getpid())), "--esito", file_esito()],
+                             cwd=nuova, close_fds=True)
+            return os.path.join(nuova, "SpotCutter.exe")
+        except OSError:
+            pass
     q = lambda p: p.replace("'", "''")   # apici raddoppiati: stringhe sicure per PowerShell
     script = os.path.join(tmp, "aggiorna.ps1")
     with open(script, "w", encoding="utf-8-sig") as f:

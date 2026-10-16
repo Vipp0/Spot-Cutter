@@ -5,6 +5,12 @@ Mostra subito la schermata di caricamento con il logo, e solo dopo carica il res
 programma (main.py, il motore, gli strumenti), che è la parte che richiede tempo. Così tra
 il doppio clic e la finestra c'è sempre qualcosa da vedere.
 Si può avviare anche "python main.py": parte lo stesso programma, senza schermata.
+
+Con "--installa" fa invece da installatore di un aggiornamento: è la versione nuova, appena
+estratta in una cartella temporanea, che aspetta la chiusura della vecchia, ne sostituisce i
+file mostrando la stessa schermata con l'avanzamento, e riapre il programma aggiornato.
+Gli argomenti (--installa CARTELLA --pid N --esito FILE) non vanno cambiati: li passa la
+versione vecchia (aggiornamento.py).
 """
 import os
 import sys
@@ -115,7 +121,120 @@ class SchermataAvvio(QWidget):
         self.close()
 
 
+def _aspetta_chiusura(pid: int, secondi: float = 120):
+    """Aspetta che il processo pid finisca (la versione vecchia che si sta chiudendo)."""
+    if sys.platform != "win32" or not pid:
+        return
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    h = k32.OpenProcess(0x00100000, False, int(pid))   # SYNCHRONIZE
+    if not h:
+        return                                         # già chiuso
+    try:
+        fine = time.monotonic() + secondi
+        while time.monotonic() < fine:
+            if k32.WaitForSingleObject(h, 100) == 0:   # WAIT_OBJECT_0: chiuso
+                return
+            QApplication.processEvents()
+    finally:
+        k32.CloseHandle(h)
+
+
+def installa(argomenti: list):
+    """Sostituisce i file della cartella del programma con quelli di questa versione."""
+    import shutil
+    import subprocess
+    a = {argomenti[i]: argomenti[i + 1] for i in range(0, len(argomenti) - 1, 2)}
+    app_dir = a["--installa"]
+    esito = a.get("--esito")
+    sorgente = os.path.dirname(os.path.abspath(sys.executable))
+
+    app = QApplication(sys.argv)
+    app.setFont(QFont("Segoe UI", 11))
+    schermata = SchermataAvvio()
+    schermata.show()
+    schermata.stato("Attendo la chiusura di Spot Cutter…", 2)
+    _aspetta_chiusura(int(a.get("--pid", 0)))
+
+    def scrivi_esito(testo):
+        if esito:
+            try:
+                os.makedirs(os.path.dirname(esito), exist_ok=True)
+                with open(esito, "w", encoding="utf-8") as f:
+                    f.write(testo)
+            except OSError:
+                pass
+
+    vecchio_int = os.path.join(app_dir, "_internal.vecchio")
+    vecchio_exe = os.path.join(app_dir, "SpotCutter.exe.vecchio")
+    da_copiare = [("SpotCutter.exe", "SpotCutter.exe")]
+    for radice, _, files in os.walk(os.path.join(sorgente, "_internal")):
+        for f in files:
+            rel = os.path.relpath(os.path.join(radice, f), sorgente)
+            da_copiare.append((rel, rel))
+    if os.path.exists(os.path.join(sorgente, "bin", "README.txt")):
+        da_copiare.append((os.path.join("bin", "README.txt"),) * 2)
+    totale = sum(os.path.getsize(os.path.join(sorgente, r)) for r, _ in da_copiare) or 1
+    try:
+        # 1. mette da parte la versione in uso (un file può restare bloccato per qualche istante)
+        schermata.stato("Metto da parte la versione precedente…", 5)
+        shutil.rmtree(vecchio_int, ignore_errors=True)
+        if os.path.exists(vecchio_exe):
+            os.remove(vecchio_exe)
+        for prova in range(40):
+            try:
+                os.rename(os.path.join(app_dir, "_internal"), vecchio_int)
+                break
+            except OSError:
+                if prova == 39:
+                    raise RuntimeError("la cartella _internal è ancora in uso")
+                time.sleep(0.25)
+                QApplication.processEvents()
+        os.rename(os.path.join(app_dir, "SpotCutter.exe"), vecchio_exe)
+        # 2. copia la versione nuova, con l'avanzamento sulla barra
+        fatti = 0
+        for i, (da, a_rel) in enumerate(da_copiare):
+            dest = os.path.join(app_dir, a_rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(os.path.join(sorgente, da), dest)
+            fatti += os.path.getsize(os.path.join(sorgente, da))
+            if i % 5 == 0 or i == len(da_copiare) - 1:
+                pc = 5 + int(90 * fatti / totale)
+                schermata.stato(f"Installo l'aggiornamento… {int(100 * fatti / totale)}%", pc)
+        # 3. tutto a posto: via la versione precedente
+        shutil.rmtree(vecchio_int, ignore_errors=True)
+        try:
+            os.remove(vecchio_exe)
+        except OSError:
+            pass
+        scrivi_esito(f"ok {VERSIONE}")
+    except Exception as e:
+        # qualcosa non è andato: si rimette la versione di prima
+        schermata.stato("Ripristino la versione precedente…", 95)
+        if os.path.isdir(vecchio_int):
+            shutil.rmtree(os.path.join(app_dir, "_internal"), ignore_errors=True)
+            try:
+                os.rename(vecchio_int, os.path.join(app_dir, "_internal"))
+            except OSError:
+                pass
+        if os.path.exists(vecchio_exe):
+            try:
+                if os.path.exists(os.path.join(app_dir, "SpotCutter.exe")):
+                    os.remove(os.path.join(app_dir, "SpotCutter.exe"))
+                os.rename(vecchio_exe, os.path.join(app_dir, "SpotCutter.exe"))
+            except OSError:
+                pass
+        scrivi_esito(f"errore {e}")
+    schermata.stato("Riapro Spot Cutter…", 100)
+    time.sleep(0.3)
+    subprocess.Popen([os.path.join(app_dir, "SpotCutter.exe")], cwd=app_dir, close_fds=True)
+    schermata.close()
+
+
 def avvia():
+    if "--installa" in sys.argv:
+        installa(sys.argv[sys.argv.index("--installa"):])
+        return
     app = QApplication(sys.argv)
     app.setFont(QFont("Segoe UI", 11))
     schermata = SchermataAvvio()
