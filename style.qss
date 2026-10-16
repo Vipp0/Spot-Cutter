@@ -884,16 +884,19 @@ QTreeWidget#albero_storico {
 }
 QTreeWidget#albero_storico::item {
     min-height: 30px;
-    border-bottom: 1px solid #F0F3F6;
+    border-bottom: 1px solid #EEF0F3;
+    border-right: 1px solid #E4E7EB;     /* divisione netta tra le colonne */
+    padding: 0px 6px;
 }
 QTreeWidget#albero_storico::item:hover {
     background-color: #F5F7FA;
 }
 QTreeWidget#albero_storico QHeaderView::section {
-    background-color: #FFFFFF;
-    color: #8592A0;
+    background-color: #F5F6F8;
+    color: #52606D;
     border: none;
     border-bottom: 1px solid #E4E7EB;
+    border-right: 1px solid #E4E7EB;
     padding: 6px 8px;
     font-size: 12px;
     font-weight: 600;

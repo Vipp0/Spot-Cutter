@@ -966,9 +966,15 @@ class StoricoDialog(QDialog):
         self._albero.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
         intest = self._albero.header()
         intest.setSectionResizeMode(self.COL_TITOLO, QHeaderView.ResizeMode.Stretch)
-        for c in (self.COL_CANALE, self.COL_CLIP, self.COL_DATA):
-            intest.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        for c, larghezza in ((self.COL_CANALE, 120), (self.COL_CLIP, 70), (self.COL_DATA, 110)):
+            intest.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            self._albero.setColumnWidth(c, larghezza)
         intest.setStretchLastSection(False)
+        intest.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._albero.headerItem().setTextAlignment(self.COL_TITOLO, Qt.AlignmentFlag.AlignLeft
+                                                   | Qt.AlignmentFlag.AlignVCenter)
+        self._ancora = None          # ultimo video spuntato a mano: con Shift si spunta fino a lui
+        self._in_intervallo = False
         # Caselle disegnate come quelle del resto del programma (la spunta è un'immagine)
         spunta = resource_path("spunta.png").replace("\\", "/")
         meno = resource_path("meno.png").replace("\\", "/")
@@ -993,10 +999,9 @@ class StoricoDialog(QDialog):
             piede.addWidget(b)
         self._btn_tutti.clicked.connect(lambda: self._spunta_tutti(True))
         self._btn_nessuno.clicked.connect(lambda: self._spunta_tutti(False))
-        self._lbl_aiuto = QLabel("Doppio clic su un clip per aprirlo")
+        self._lbl_aiuto = QLabel("Shift + clic per spuntare un intervallo · doppio clic su un clip per aprirlo")
         self._lbl_aiuto.setObjectName("lbl_riepilogo")
-        piede.addSpacing(12)
-        piede.addWidget(self._lbl_aiuto)
+        layout.addWidget(self._lbl_aiuto)      # sotto l'elenco, così il piede resta ai pulsanti
         piede.addStretch()
         self._btn_rimuovi = QPushButton("Rimuovi dallo storico")
         self._btn_rimuovi.setObjectName("btn_pericolo")
@@ -1038,6 +1043,7 @@ class StoricoDialog(QDialog):
         storico = self._leggi()
         self._albero.blockSignals(True)
         self._albero.clear()
+        self._ancora = None
         per_anno = {}
         for vid, voce in storico.items():
             anno = str(voce.get("anno") or extract_date_info(vid)[1] or "?")
@@ -1077,9 +1083,10 @@ class StoricoDialog(QDialog):
                     if not os.path.exists(os.path.join(self.libreria, rel)):
                         clip.setForeground(self.COL_TITOLO, QColor("#B8C0C9"))
                         clip.setToolTip(self.COL_TITOLO, f"{rel}\n(il file non c'è più)")
-                for c in (self.COL_CLIP,):
-                    riga.setTextAlignment(c, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            ramo.setTextAlignment(self.COL_CLIP, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                for c in (self.COL_CANALE, self.COL_CLIP, self.COL_DATA):
+                    riga.setTextAlignment(c, Qt.AlignmentFlag.AlignCenter)
+            for c in (self.COL_CANALE, self.COL_CLIP, self.COL_DATA):
+                ramo.setTextAlignment(c, Qt.AlignmentFlag.AlignCenter)
         # pochi video: tutto aperto; tanti: aperto solo l'anno più recente
         for i in range(self._albero.topLevelItemCount()):
             self._albero.topLevelItem(i).setExpanded(len(storico) <= 60 or i == len(anni) - 1)
@@ -1110,9 +1117,34 @@ class StoricoDialog(QDialog):
         self._btn_rimuovi.setEnabled(n > 0)
         self._btn_rimuovi.setText(f" Rimuovi dallo storico ({n})" if n else " Rimuovi dallo storico")
 
+    def _video_visibili(self) -> list:
+        """Le righe dei video, nell'ordine in cui si vedono (gli anni chiusi contano lo stesso)."""
+        fuori = []
+        for i in range(self._albero.topLevelItemCount()):
+            ramo = self._albero.topLevelItem(i)
+            if ramo.isHidden():
+                continue
+            fuori += [ramo.child(j) for j in range(ramo.childCount()) if not ramo.child(j).isHidden()]
+        return fuori
+
     def _on_spunta(self, item, colonna):
-        if colonna == self.COL_TITOLO:
-            self._aggiorna_pulsanti()
+        if colonna != self.COL_TITOLO or self._in_intervallo:
+            return
+        dato = item.data(self.COL_TITOLO, Qt.ItemDataRole.UserRole)
+        if dato and dato[0] == "video":
+            # Shift + clic: anche tutti i video tra questo e quello spuntato prima prendono lo
+            # stesso stato (spuntati o no), come nelle cartelle di Windows
+            if (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
+                    and self._ancora is not None):
+                righe = self._video_visibili()
+                if self._ancora in righe and item in righe:
+                    a, b = sorted((righe.index(self._ancora), righe.index(item)))
+                    self._in_intervallo = True
+                    for r in righe[a:b + 1]:
+                        r.setCheckState(self.COL_TITOLO, item.checkState(self.COL_TITOLO))
+                    self._in_intervallo = False
+            self._ancora = item
+        self._aggiorna_pulsanti()
 
     def _spunta_tutti(self, si: bool):
         """Spunta (o toglie la spunta a) tutti i video visibili, cioè quelli che passano la ricerca."""
