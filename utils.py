@@ -54,6 +54,31 @@ def _get_base_dir() -> str:
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+def sposta_nel_cestino(percorsi) -> int:
+    """
+    Sposta i file nel Cestino di Windows (recuperabili), senza finestre di conferma.
+    Ritorna quanti ne ha spostati. I file che non esistono si saltano.
+    """
+    esistenti = [os.path.abspath(p) for p in percorsi if os.path.isfile(p)]
+    if not esistenti or sys.platform != "win32":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT),
+                    ("pFrom", wintypes.LPCWSTR), ("pTo", wintypes.LPCWSTR),
+                    ("fFlags", ctypes.c_ushort), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", ctypes.c_void_p), ("lpszProgressTitle", wintypes.LPCWSTR)]
+    FO_DELETE, FOF_SILENT, FOF_NOCONFIRMATION, FOF_ALLOWUNDO, FOF_NOERRORUI = 3, 4, 16, 64, 1024
+    op = SHFILEOPSTRUCTW()
+    op.wFunc = FO_DELETE
+    op.pFrom = "\0".join(esistenti) + "\0\0"   # elenco terminato da un doppio zero
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+    if ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) != 0:
+        return 0
+    return sum(1 for p in esistenti if not os.path.exists(p))
+
 def get_tool_path(name: str) -> str:
     """
     Cerca un eseguibile nell'ordine:

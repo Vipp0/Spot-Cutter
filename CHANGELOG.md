@@ -5,6 +5,20 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.4.3
+
+### 🎨 Nuova grafica / New look
+
+- 🇮🇹 **Storico ridisegnato** — la finestra dello storico era una tabella con un cestino su ogni riga. Ora i video sono raggruppati per anno (ogni anno si apre e si chiude, con il numero di video e di clip), i titoli si leggono puliti (senza ".mp4" e con le barre giuste), in ogni anno i video sono nell'ordine di messa in onda e in alto c'è il riepilogo ("29 video · 682 clip · dal 1980 al 2013") con una casella di ricerca per titolo o canale. Si possono spuntare più video, o un anno intero, e toglierli tutti insieme con "Rimuovi dallo storico (N)"; "Seleziona tutti" e "Nessuno" agiscono sui video che passano la ricerca
+- 🇬🇧 **Redesigned history** — the history window was a table with a bin on every row. Now the videos are grouped by year (each year opens and closes, with the number of videos and clips), titles read clean (no ".mp4" and with real slashes), within each year videos are in broadcast order and at the top there is the summary ("29 videos · 682 clips · from 1980 to 2013") with a search box for title or channel. Several videos, or a whole year, can be ticked and removed together with "Remove from history (N)"; "Select all" and "None" act on the videos matching the search
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Lo storico ricorda i clip creati** — da questa versione, per ogni video elaborato lo storico si segna anche i clip che ha creato: aprendo un video nello storico si vedono i suoi spot, e un doppio clic apre il clip nel lettore. Togliendo un video dallo storico (per rifarlo) si può scegliere di spostare nel Cestino di Windows anche i suoi clip, così non restano doppioni; dal Cestino si possono sempre recuperare. I video elaborati con le versioni precedenti non hanno l'elenco dei clip
+- 🇬🇧 **The history remembers the clips created** — from this version, for every processed video the history also records the clips it created: opening a video in the history shows its spots, and a double click opens the clip in the player. When removing a video from the history (to redo it) you can choose to move its clips to the Windows Recycle Bin too, so no duplicates are left; they can always be restored from the Recycle Bin. Videos processed with earlier versions have no clip list
+
+---
+
 ## 🎬 Spot Cutter 1.4.2
 
 ### 🔧 Miglioramenti / Improvements

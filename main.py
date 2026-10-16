@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QTextEdit, QScrollArea,
     QFrame, QSizePolicy, QDialog, QDialogButtonBox, QFileDialog,
     QMessageBox, QProgressBar, QSplitter, QStyle, QPlainTextEdit,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QMenu
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QMenu, QTreeWidget, QTreeWidgetItem
 )
 from PySide6.QtCore import (
     Qt, QThread, QObject, Signal, Slot, QTimer, QSize, QSettings,
@@ -50,10 +50,10 @@ from utils import (
     get_unique_filename, get_video_duration, righe_txt_ignorate, righe_txt_fuori_ordine,
     get_seconds, get_tool_path, motivo_non_pronto, parse_settings, load_settings, save_settings,
     aggiungi_strumenti_al_path, strumento_presente, scarica_ytdlp, miniatura_video, RIGA_TXT,
-    LOG, avvia_log_tecnico, cartella_log,
+    LOG, avvia_log_tecnico, cartella_log, sposta_nel_cestino,
 )
 
-VERSIONE = "1.4.2"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
+VERSIONE = "1.4.3"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
@@ -917,93 +917,281 @@ class DateEditorDialog(QDialog):
 # DIALOG STORICO ELABORAZIONI
 # ══════════════════════════════════════════════════════════════════════════
 class StoricoDialog(QDialog):
+    """
+    Storico dei video elaborati, raggruppato per anno. Ogni video si può spuntare (anche un
+    anno intero) e togliere dallo storico, così si può elaborare di nuovo; per i video
+    elaborati dalla 1.4.3 si vedono anche i clip creati, che si aprono con un doppio clic e
+    che, togliendo il video, si possono spostare nel Cestino.
+    """
+    COL_TITOLO, COL_CANALE, COL_CLIP, COL_DATA = range(4)
+
     def __init__(self, storico_path: str, parent=None):
         super().__init__(parent)
         self.storico_path = storico_path
+        self.libreria = os.path.dirname(storico_path)
         self.setWindowTitle("Storico elaborazioni")
-        self.setMinimumSize(780, 480)
+        self.resize(900, 620)
+        self.setMinimumSize(720, 460)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(20, 18, 20, 16)
         layout.setSpacing(10)
 
-        # Titolo
-        lbl = QLabel("Storico dei video elaborati — clicca il cestino per rimuovere una voce")
-        lbl.setStyleSheet("font-size: 12px; color: grey;")
-        layout.addWidget(lbl)
+        testata = QHBoxLayout()
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        titolo = QLabel("Storico")
+        titolo.setObjectName("titolo_coda")
+        self._riepilogo = QLabel("")
+        self._riepilogo.setObjectName("lbl_riepilogo")
+        col.addWidget(titolo)
+        col.addWidget(self._riepilogo)
+        testata.addLayout(col, stretch=1)
+        self._cerca = QLineEdit()
+        self._cerca.setPlaceholderText("Cerca per titolo o canale…")
+        self._cerca.setFixedWidth(260)
+        self._cerca.setClearButtonEnabled(True)
+        self._cerca.textChanged.connect(self._filtra)
+        testata.addWidget(self._cerca, alignment=Qt.AlignmentFlag.AlignBottom)
+        layout.addLayout(testata)
 
-        # Tabella
-        self._table = QTableWidget()
-        self._table.setColumnCount(5)
-        self._table.setHorizontalHeaderLabels(["Data", "File", "Canale", "Spot", ""])
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.verticalHeader().setVisible(False)
-        layout.addWidget(self._table)
+        self._albero = QTreeWidget()
+        self._albero.setObjectName("albero_storico")
+        self._albero.setColumnCount(4)
+        self._albero.setHeaderLabels(["Video", "Canale", "Clip", "Elaborato il"])
+        self._albero.setRootIsDecorated(True)
+        self._albero.setUniformRowHeights(True)
+        self._albero.setAlternatingRowColors(False)
+        self._albero.setSelectionMode(QTreeWidget.SelectionMode.NoSelection)
+        intest = self._albero.header()
+        intest.setSectionResizeMode(self.COL_TITOLO, QHeaderView.ResizeMode.Stretch)
+        for c in (self.COL_CANALE, self.COL_CLIP, self.COL_DATA):
+            intest.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        intest.setStretchLastSection(False)
+        # Caselle disegnate come quelle del resto del programma (la spunta è un'immagine)
+        spunta = resource_path("spunta.png").replace("\\", "/")
+        meno = resource_path("meno.png").replace("\\", "/")
+        self._albero.setStyleSheet(
+            "QTreeWidget#albero_storico::indicator { width: 16px; height: 16px; border-radius: 4px; "
+            "border: 1px solid #A7B1BC; background: #FFFFFF; }"
+            "QTreeWidget#albero_storico::indicator:hover { border-color: #1D3B53; }"
+            "QTreeWidget#albero_storico::indicator:checked { background: #1D3B53; border-color: #1D3B53; "
+            f"image: url(\"{spunta}\"); }}"
+            "QTreeWidget#albero_storico::indicator:indeterminate { background: #6B8299; border-color: #6B8299; "
+            f"image: url(\"{meno}\"); }}")
+        self._albero.itemChanged.connect(self._on_spunta)
+        self._albero.itemDoubleClicked.connect(self._apri)
+        layout.addWidget(self._albero, stretch=1)
 
-        # Bottoni
-        btn_row = QHBoxLayout()
-        btn_close = QPushButton("Chiudi")
-        btn_close.clicked.connect(self.accept)
-        btn_row.addStretch()
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
+        piede = QHBoxLayout()
+        self._btn_tutti = QPushButton("Seleziona tutti")
+        self._btn_nessuno = QPushButton("Nessuno")
+        for b in (self._btn_tutti, self._btn_nessuno):
+            b.setObjectName("btn_collegamento")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            piede.addWidget(b)
+        self._btn_tutti.clicked.connect(lambda: self._spunta_tutti(True))
+        self._btn_nessuno.clicked.connect(lambda: self._spunta_tutti(False))
+        self._lbl_aiuto = QLabel("Doppio clic su un clip per aprirlo")
+        self._lbl_aiuto.setObjectName("lbl_riepilogo")
+        piede.addSpacing(12)
+        piede.addWidget(self._lbl_aiuto)
+        piede.addStretch()
+        self._btn_rimuovi = QPushButton("Rimuovi dallo storico")
+        self._btn_rimuovi.setObjectName("btn_pericolo")
+        self._btn_rimuovi.setIcon(icona("cestino", "#A3271F"))
+        self._btn_rimuovi.clicked.connect(self._rimuovi)
+        btn_chiudi = QPushButton("Chiudi")
+        btn_chiudi.setDefault(True)
+        btn_chiudi.clicked.connect(self.accept)
+        piede.addWidget(self._btn_rimuovi)
+        piede.addWidget(btn_chiudi)
+        layout.addLayout(piede)
 
         self._load()
 
+    # ── dati ──────────────────────────────────────────────────────────────
+    def _leggi(self) -> dict:
+        try:
+            with open(self.storico_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    @staticmethod
+    def _titolo(vid: str) -> str:
+        """Il nome del video come si legge: senza estensione e con le barre vere al posto di ⧸."""
+        return os.path.splitext(vid)[0].replace("⧸", "/").replace("＂", '"').replace("：", ":")
+
+    @staticmethod
+    def _chiave_data(vid: str):
+        """Per ordinare i video di un anno nell'ordine di messa in onda (poi per nome)."""
+        data = extract_date_info(vid)[0] or ""
+        try:
+            return (datetime.strptime(data, "%d-%m-%Y"), vid.lower())
+        except ValueError:
+            return (datetime.max, vid.lower())
+
     def _load(self):
-        """Carica lo storico dalla tabella."""
-        self._table.setRowCount(0)
-        if not os.path.exists(self.storico_path):
+        """Riempie l'albero: un ramo per anno, un video per riga, i clip sotto ogni video."""
+        storico = self._leggi()
+        self._albero.blockSignals(True)
+        self._albero.clear()
+        per_anno = {}
+        for vid, voce in storico.items():
+            anno = str(voce.get("anno") or extract_date_info(vid)[1] or "?")
+            per_anno.setdefault(anno, []).append((vid, voce))
+        grassetto = QFont()
+        grassetto.setBold(True)
+        tot_clip = 0
+        anni = sorted(per_anno, key=lambda a: (not a.isdigit(), a))
+        for anno in anni:
+            voci = sorted(per_anno[anno], key=lambda x: self._chiave_data(x[0]))
+            n_clip = sum(int(v.get("n_spot") or 0) for _, v in voci)
+            tot_clip += n_clip
+            ramo = QTreeWidgetItem(self._albero)
+            ramo.setText(self.COL_TITOLO, anno)
+            ramo.setText(self.COL_CANALE, f"{len(voci)} video")
+            ramo.setText(self.COL_CLIP, str(n_clip))
+            ramo.setFont(self.COL_TITOLO, grassetto)
+            ramo.setFlags(ramo.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate)
+            ramo.setCheckState(self.COL_TITOLO, Qt.CheckState.Unchecked)
+            ramo.setData(self.COL_TITOLO, Qt.ItemDataRole.UserRole, ("anno", anno))
+            for vid, voce in voci:
+                riga = QTreeWidgetItem(ramo)
+                riga.setText(self.COL_TITOLO, self._titolo(vid))
+                riga.setToolTip(self.COL_TITOLO, vid)
+                riga.setText(self.COL_CANALE, voce.get("canale", ""))
+                riga.setText(self.COL_CLIP, str(voce.get("n_spot", "")))
+                riga.setText(self.COL_DATA, (voce.get("data_elaborazione") or "").split(" ")[0])
+                riga.setToolTip(self.COL_DATA, f"Elaborato il {voce.get('data_elaborazione', '?')}")
+                riga.setFlags(riga.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                riga.setCheckState(self.COL_TITOLO, Qt.CheckState.Unchecked)
+                riga.setData(self.COL_TITOLO, Qt.ItemDataRole.UserRole, ("video", vid))
+                for rel in voce.get("clip") or []:
+                    clip = QTreeWidgetItem(riga)
+                    clip.setText(self.COL_TITOLO, os.path.splitext(os.path.basename(rel))[0])
+                    clip.setToolTip(self.COL_TITOLO, rel)
+                    clip.setData(self.COL_TITOLO, Qt.ItemDataRole.UserRole, ("clip", rel))
+                    if not os.path.exists(os.path.join(self.libreria, rel)):
+                        clip.setForeground(self.COL_TITOLO, QColor("#B8C0C9"))
+                        clip.setToolTip(self.COL_TITOLO, f"{rel}\n(il file non c'è più)")
+                for c in (self.COL_CLIP,):
+                    riga.setTextAlignment(c, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            ramo.setTextAlignment(self.COL_CLIP, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # pochi video: tutto aperto; tanti: aperto solo l'anno più recente
+        for i in range(self._albero.topLevelItemCount()):
+            self._albero.topLevelItem(i).setExpanded(len(storico) <= 60 or i == len(anni) - 1)
+        if storico:
+            numerici = [a for a in anni if a.isdigit()]
+            periodo = (f" · dal {numerici[0]} al {numerici[-1]}" if len(numerici) > 1
+                       else f" · {numerici[0]}" if numerici else "")
+            self._riepilogo.setText(f"{len(storico)} video · {tot_clip} clip{periodo}")
+        else:
+            self._riepilogo.setText("Nessun video elaborato finora")
+        self._albero.blockSignals(False)
+        self._filtra(self._cerca.text())
+        self._aggiorna_pulsanti()
+
+    # ── selezione e ricerca ───────────────────────────────────────────────
+    def _video_spuntati(self) -> list:
+        fuori = []
+        for i in range(self._albero.topLevelItemCount()):
+            ramo = self._albero.topLevelItem(i)
+            for j in range(ramo.childCount()):
+                r = ramo.child(j)
+                if r.checkState(self.COL_TITOLO) == Qt.CheckState.Checked:
+                    fuori.append(r.data(self.COL_TITOLO, Qt.ItemDataRole.UserRole)[1])
+        return fuori
+
+    def _aggiorna_pulsanti(self):
+        n = len(self._video_spuntati())
+        self._btn_rimuovi.setEnabled(n > 0)
+        self._btn_rimuovi.setText(f" Rimuovi dallo storico ({n})" if n else " Rimuovi dallo storico")
+
+    def _on_spunta(self, item, colonna):
+        if colonna == self.COL_TITOLO:
+            self._aggiorna_pulsanti()
+
+    def _spunta_tutti(self, si: bool):
+        """Spunta (o toglie la spunta a) tutti i video visibili, cioè quelli che passano la ricerca."""
+        stato = Qt.CheckState.Checked if si else Qt.CheckState.Unchecked
+        for i in range(self._albero.topLevelItemCount()):
+            ramo = self._albero.topLevelItem(i)
+            for j in range(ramo.childCount()):
+                if not ramo.child(j).isHidden():
+                    ramo.child(j).setCheckState(self.COL_TITOLO, stato)
+        self._aggiorna_pulsanti()
+
+    def _filtra(self, testo: str):
+        parole = testo.lower().split()
+        for i in range(self._albero.topLevelItemCount()):
+            ramo = self._albero.topLevelItem(i)
+            visibili = 0
+            for j in range(ramo.childCount()):
+                r = ramo.child(j)
+                dove = (r.text(self.COL_TITOLO) + " " + r.text(self.COL_CANALE)).lower()
+                si = all(p in dove for p in parole)
+                r.setHidden(not si)
+                visibili += si
+            ramo.setHidden(visibili == 0)
+            if parole and visibili:
+                ramo.setExpanded(True)
+
+    def _apri(self, item, colonna):
+        """Doppio clic: un clip si apre nel lettore; un video apre la cartella del suo anno."""
+        tipo, valore = item.data(self.COL_TITOLO, Qt.ItemDataRole.UserRole) or (None, None)
+        if tipo == "clip":
+            path = os.path.join(self.libreria, valore)
+        elif tipo == "anno":
+            path = os.path.join(self.libreria, valore)
+        else:
             return
-        try:
-            with open(self.storico_path, "r", encoding="utf-8") as f:
-                storico = json.load(f)
-        except Exception:
+        if os.path.exists(path):
+            os.startfile(path)
+
+    # ── rimozione ─────────────────────────────────────────────────────────
+    def _rimuovi(self):
+        scelti = self._video_spuntati()
+        if not scelti:
             return
-
-        def _parse_date(entry):
-            try:
-                return datetime.strptime(entry.get("data_elaborazione", ""), "%d-%m-%Y %H:%M")
-            except Exception:
-                return datetime.min
-
-        for vid, entry in sorted(storico.items(),
-                                  key=lambda x: _parse_date(x[1]),
-                                  reverse=True):
-            row = self._table.rowCount()
-            self._table.insertRow(row)
-            self._table.setItem(row, 0, QTableWidgetItem(entry.get("data_elaborazione", "?")))
-            self._table.setItem(row, 1, QTableWidgetItem(vid))
-            self._table.setItem(row, 2, QTableWidgetItem(entry.get("canale", "")))
-            self._table.setItem(row, 3, QTableWidgetItem(str(entry.get("n_spot", ""))))
-
-            # Bottone elimina riga
-            btn_del = QPushButton(glifo("cestino", "🗑"))
-            btn_del.setObjectName("btn_icona_rossa")
-            btn_del.setFixedSize(30, 28)
-            btn_del.setToolTip("Rimuovi dal storico")
-            btn_del.clicked.connect(lambda checked, v=vid: self._delete_entry(v))
-            self._table.setCellWidget(row, 4, btn_del)
-
-    def _delete_entry(self, vid: str):
-        """Rimuove una voce dallo storico."""
+        storico = self._leggi()
+        clip = [os.path.join(self.libreria, rel) for v in scelti for rel in (storico.get(v, {}).get("clip") or [])]
+        clip_esistenti = [c for c in clip if os.path.exists(c)]
+        n = len(scelti)
+        box = QMessageBox(self)
+        box.setWindowTitle("Rimuovere dallo storico?")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(f"Rimuovere {'1 video' if n == 1 else f'{n} video'} dallo storico?\n\n"
+                    f"{'Potrà' if n == 1 else 'Potranno'} essere elaborat{'o' if n == 1 else 'i'} di nuovo. "
+                    "I clip già creati restano nella libreria, a meno che tu non scelga di spostarli nel Cestino.")
+        casella = None
+        if clip_esistenti:
+            casella = QCheckBox(f"Sposta nel Cestino anche i loro {len(clip_esistenti)} clip "
+                                f"(si possono recuperare dal Cestino di Windows)")
+            box.setCheckBox(casella)
+        btn_si = box.addButton("Rimuovi", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton("Annulla", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is not btn_si:
+            return
+        spostati = 0
+        if casella is not None and casella.isChecked():
+            spostati = sposta_nel_cestino(clip_esistenti)
+        for v in scelti:
+            storico.pop(v, None)
         try:
-            with open(self.storico_path, "r", encoding="utf-8") as f:
-                storico = json.load(f)
-            storico.pop(vid, None)
             with open(self.storico_path, "w", encoding="utf-8") as f:
                 json.dump(storico, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
-        self._load()  # ricarica la tabella
+        except OSError as e:
+            QMessageBox.warning(self, "Storico non salvato", f"Impossibile salvare lo storico:\n{e}")
+            return
+        LOG.info("storico: rimossi %d video, %d clip spostati nel Cestino", n, spostati)
+        if self.parent() is not None and hasattr(self.parent(), "_on_log"):
+            self.parent()._on_log(f"🗑 Storico: {'rimosso 1 video' if n == 1 else f'rimossi {n} video'}"
+                                  + (f", {spostati} clip spostati nel Cestino" if spostati else "") + ".", "grey")
+        self._load()
 
 
 # ══════════════════════════════════════════════════════════════════════════

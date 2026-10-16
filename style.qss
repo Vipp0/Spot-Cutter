@@ -871,3 +871,59 @@ QFrame#console QLabel#lbl_stat_console {
     color: #FFFFFF;
     font-size: 12px;
 }
+
+/* ── STORICO ────────────────────────────────────────────────────────────── */
+QTreeWidget#albero_storico {
+    background-color: #FFFFFF;
+    border: 1px solid #E4E7EB;
+    border-radius: 10px;
+    color: #1F2933;
+    font-size: 13px;
+    padding: 4px;
+    outline: 0;
+}
+QTreeWidget#albero_storico::item {
+    min-height: 30px;
+    border-bottom: 1px solid #F0F3F6;
+}
+QTreeWidget#albero_storico::item:hover {
+    background-color: #F5F7FA;
+}
+QTreeWidget#albero_storico QHeaderView::section {
+    background-color: #FFFFFF;
+    color: #8592A0;
+    border: none;
+    border-bottom: 1px solid #E4E7EB;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Pulsanti-collegamento (Seleziona tutti / Nessuno) */
+QDialog QPushButton#btn_collegamento {
+    background-color: transparent;
+    border: none;
+    color: #1D3B53;
+    font-weight: 600;
+    padding: 4px 6px;
+    min-width: 0px;
+}
+QDialog QPushButton#btn_collegamento:hover {
+    color: #2A4D6A;
+    text-decoration: underline;
+}
+
+/* Azione che cancella: tenue, rossa */
+QDialog QPushButton#btn_pericolo {
+    background-color: #FBE4E2;
+    color: #A3271F;
+    border: 1px solid #F3C9C6;
+}
+QDialog QPushButton#btn_pericolo:hover {
+    background-color: #F8D3CF;
+}
+QDialog QPushButton#btn_pericolo:disabled {
+    background-color: #F5F6F8;
+    color: #B8C0C9;
+    border-color: #E4E7EB;
+}

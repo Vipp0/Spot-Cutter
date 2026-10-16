@@ -555,6 +555,9 @@ class VideoEngine:
                         n_spot       = tagli_riusciti,
                         canale       = self._extract_channel(vid),
                         anno         = final_year,
+                        clip         = [os.path.relpath(j["out_f"], state.get("work_dir", state["current_dir"]))
+                                        for j in cut_jobs
+                                        if os.path.exists(j["out_f"])],
                     )
 
                     if tagli_riusciti < len(cut_jobs):
@@ -763,8 +766,12 @@ class VideoEngine:
             pass
 
     @staticmethod
-    def _write_storico(storico_path: str, vid: str, n_spot: int, canale: str, anno: str):
-        """Aggiunge una voce al file storico.json nella Libreria Spot."""
+    def _write_storico(storico_path: str, vid: str, n_spot: int, canale: str, anno: str,
+                       clip: list | None = None):
+        """
+        Aggiunge una voce al file storico.json nella Libreria Spot. "clip": i file creati, relativi
+        alla libreria (dalla 1.4.3; le voci più vecchie non ce l'hanno).
+        """
         try:
             storico = {}
             if os.path.exists(storico_path):
@@ -775,6 +782,7 @@ class VideoEngine:
                 "n_spot":  n_spot,
                 "canale":  canale,
                 "anno":    anno,
+                "clip":    clip or [],
             }
             with open(storico_path, "w", encoding="utf-8") as f:
                 json.dump(storico, f, indent=2, ensure_ascii=False)
