@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['avvio.py'],
     pathex=[],
     binaries=[],
     datas=[('style.qss', '.'), ('Spot_Cutter.ico', '.'), ('Spot_cutter_logo.png', '.'), ('Spot_cutter_text.png', '.'), ('spunta.png', '.'), ('spunta@2x.png', '.'), ('meno.png', '.'), ('meno@2x.png', '.')],

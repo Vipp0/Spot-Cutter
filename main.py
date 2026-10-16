@@ -53,7 +53,7 @@ from utils import (
     LOG, avvia_log_tecnico, cartella_log, sposta_nel_cestino,
 )
 
-VERSIONE = "1.4.3"   # da aggiornare a ogni versione: compare nel titolo e nel log tecnico
+from versione import VERSIONE   # si aggiorna in versione.py
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
@@ -3800,7 +3800,11 @@ def _avvia_log():
     return path
 
 
-if __name__ == "__main__":
+def avvia(app=None, schermata=None):
+    """
+    Avvia il programma. Dal programma compilato arriva da avvio.py, che ha già creato
+    l'applicazione e mostrato la schermata di caricamento; con "python main.py" parte da qui.
+    """
     # Una console non UTF-8 (alcuni terminali di Windows) non deve far chiudere il programma
     # per un carattere che non sa scrivere
     for flusso in (sys.stdout, sys.stderr):
@@ -3809,13 +3813,23 @@ if __name__ == "__main__":
         except (AttributeError, ValueError):
             pass
     _avvia_log()
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-    os.environ["QT_FONT_DPI"] = "96"
-    os.environ["QT_USE_DIRECTWRITE"] = "1"
-    app = QApplication(sys.argv)
-    app.setFont(QFont("Segoe UI", 11))
+    if app is None:
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+        os.environ["QT_FONT_DPI"] = "96"
+        os.environ["QT_USE_DIRECTWRITE"] = "1"
+        app = QApplication(sys.argv)
+        app.setFont(QFont("Segoe UI", 11))
+    if schermata:
+        schermata.stato("Preparo la finestra…", 55)
     win = SpotCutterApp()
-    win.show()
+    if schermata:
+        schermata.chiudi_quando_pronta(win)
+    else:
+        win.show()
     codice = app.exec()
     LOG.info("Spot Cutter chiuso (codice %s)", codice)
     sys.exit(codice)
+
+
+if __name__ == "__main__":
+    avvia()
