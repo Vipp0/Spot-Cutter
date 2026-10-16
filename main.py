@@ -54,6 +54,7 @@ from utils import (
 )
 
 from versione import VERSIONE   # si aggiorna in versione.py
+import aggiornamento
 aggiungi_strumenti_al_path()   # ffmpeg nella cartella o in bin/: lo vedono anche yt-dlp e ffplay
 from video_engine import VideoEngine
 
@@ -1616,6 +1617,8 @@ class SpotCutterApp(QMainWindow):
     _sig_duration        = Signal(float, int)
     _sig_info_video      = Signal(str, float, str)   # (percorso del video, durata, percorso della miniatura)
     _sig_ytdlp_scaricato = Signal(str)   # "" = riuscito, altrimenti l'errore
+    _sig_aggiornamento   = Signal(object, bool)   # (release più nuova o None o errore, controllo chiesto a mano)
+    _sig_pacchetto       = Signal(str, str)       # (percorso del pacchetto scaricato o "", errore)
 
     def __init__(self):
         super().__init__()
@@ -1695,6 +1698,8 @@ class SpotCutterApp(QMainWindow):
         self._sig_duration.connect(self._on_duration_ready)
         self._sig_info_video.connect(self._on_info_video)
         self._sig_ytdlp_scaricato.connect(self._on_ytdlp_scaricato)
+        self._sig_aggiornamento.connect(self._on_aggiornamento)
+        self._sig_pacchetto.connect(self._on_pacchetto_scaricato)
 
         # 5. Threading
         self._worker_thread = None
@@ -1709,6 +1714,15 @@ class SpotCutterApp(QMainWindow):
 
         QTimer.singleShot(800, self._startup_checks) 
         QTimer.singleShot(1200, self._proponi_ripresa_sessione)
+        QTimer.singleShot(4000, lambda: self._controlla_aggiornamenti(manuale=False))
+        self._aggiornamento_in_attesa = None
+        self._chiusura_per_aggiornamento = False
+        esito = aggiornamento.esito_precedente()
+        if esito:
+            QTimer.singleShot(300, lambda: self._on_log(
+                f"✅ Spot Cutter aggiornato alla versione {esito.split(' ', 1)[1]}." if esito.startswith("ok ")
+                else f"⚠️ L'ultimo aggiornamento non è riuscito ({esito.split(' ', 1)[-1]}): "
+                     f"resta la versione {VERSIONE}.", "green" if esito.startswith("ok ") else "orange"))
 
     def _update_duration_label(self):
         """
@@ -2261,6 +2275,7 @@ class SpotCutterApp(QMainWindow):
         menu_altro.addAction("Salva la coda in un file…", self._on_save_session)
         menu_altro.addAction("Carica una coda da un file…", self._on_load_session)
         menu_altro.addSeparator()
+        menu_altro.addAction("Controlla aggiornamenti", lambda: self._controlla_aggiornamenti(manuale=True))
         menu_altro.addAction("Apri il log tecnico", self._apri_log_tecnico)
         btn_altro.setMenu(menu_altro)
         testata.addWidget(btn_altro, alignment=Qt.AlignmentFlag.AlignBottom)
@@ -2571,6 +2586,109 @@ class SpotCutterApp(QMainWindow):
                     pass
         self._update_duration_label()
 
+    # ── AGGIORNAMENTO DEL PROGRAMMA ─────────────────────────────────────────
+    def _controlla_aggiornamenti(self, manuale: bool):
+        """Chiede a GitHub, in sottofondo, se c'è una versione più nuova."""
+        def lavoro():
+            try:
+                info = aggiornamento.cerca_aggiornamento(VERSIONE)
+            except Exception as e:
+                LOG.info("controllo aggiornamenti non riuscito: %s", e)
+                info = f"non sono riuscito a contattare GitHub ({e})"
+            self._sig_aggiornamento.emit(info, manuale)
+        threading.Thread(target=lavoro, daemon=True).start()
+
+    @Slot(object, bool)
+    def _on_aggiornamento(self, info, manuale: bool):
+        if isinstance(info, str):          # errore di rete
+            if manuale:
+                QMessageBox.warning(self, "Controllo aggiornamenti", f"Controllo non riuscito: {info}.")
+            return
+        if info is None:
+            if manuale:
+                QMessageBox.information(self, "Controllo aggiornamenti",
+                                        f"Hai già l'ultima versione di Spot Cutter ({VERSIONE}).")
+            return
+        LOG.info("disponibile la versione %s (in uso la %s)", info["versione"], VERSIONE)
+        if not manuale and self.settings_storage.value("aggiornamento_saltato", "") == info["versione"]:
+            return
+        if self.state.get("running"):
+            self._aggiornamento_in_attesa = info   # si propone a fine lavoro
+            return
+        self._proponi_aggiornamento(info)
+
+    def _proponi_aggiornamento(self, info: dict):
+        self._aggiornamento_in_attesa = None
+        nuove = aggiornamento.novita(info["note"])
+        elenco = "\n".join(f"  · {t}" for t in nuove) or "  (vedi la pagina della release)"
+        motivo = None if info.get("zip") else "questa release non ha il pacchetto per l'aggiornamento automatico"
+        motivo = motivo or aggiornamento.si_puo_aggiornare()
+        box = QMessageBox(self)
+        box.setWindowTitle("Aggiornamento disponibile")
+        box.setIcon(QMessageBox.Icon.Information)
+        testo = (f"È disponibile Spot Cutter {info['versione']} (tu hai la {VERSIONE}).\n\n"
+                 f"Novità:\n{elenco}\n\n")
+        if motivo:
+            testo += f"L'aggiornamento automatico non si può fare: {motivo}. Puoi scaricarla dalla pagina della release."
+        else:
+            mb = info.get("dimensione", 0) / 1e6
+            testo += (f"Il programma scarica l'aggiornamento ({mb:.0f} MB), si chiude, sostituisce i suoi file "
+                      "e si riapre. La cartella bin (yt-dlp, ffmpeg), le impostazioni, la libreria e lo "
+                      "storico restano come sono.")
+        box.setText(testo)
+        btn_si = box.addButton("Apri la pagina" if motivo else "Aggiorna ora", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Più tardi", QMessageBox.ButtonRole.RejectRole)
+        btn_salta = box.addButton("Salta questa versione", QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(btn_si)
+        box.exec()
+        scelto = box.clickedButton()
+        if scelto is btn_salta:
+            self.settings_storage.setValue("aggiornamento_saltato", info["versione"])
+            self._on_log(f"ℹ️ Versione {info['versione']} saltata: non verrà più proposta "
+                         f"(la trovi nel menu ⋯ › Controlla aggiornamenti).", "grey")
+        elif scelto is btn_si and motivo:
+            import webbrowser
+            webbrowser.open(info["pagina"])
+        elif scelto is btn_si:
+            self._scarica_aggiornamento(info)
+
+    def _scarica_aggiornamento(self, info: dict):
+        self._on_log(f"⬇️ Scarico Spot Cutter {info['versione']}…", "cyan")
+        self._btn_run.setEnabled(False)
+
+        def lavoro():
+            try:
+                cartella = aggiornamento.cartella_scaricamento()
+                path = os.path.join(cartella, f"SpotCutter-{info['versione']}.zip")
+                aggiornamento.scarica(info["zip"], path, info.get("sha256"),
+                                      lambda f: self._sig_progress.emit(f, f"Scarico l'aggiornamento… {int(f * 100)}%"))
+                self._sig_pacchetto.emit(path, "")
+            except Exception as e:
+                self._sig_pacchetto.emit("", str(e) or type(e).__name__)
+        self._versione_in_arrivo = info["versione"]
+        threading.Thread(target=lavoro, daemon=True).start()
+
+    @Slot(str, str)
+    def _on_pacchetto_scaricato(self, path: str, errore: str):
+        self._on_progress(0, "Pronto")
+        if errore:
+            self._sync_buttons()
+            self._on_log(f"❌ Aggiornamento non scaricato: {errore}", "red")
+            QMessageBox.warning(self, "Aggiornamento non riuscito",
+                                f"Non sono riuscito a scaricare l'aggiornamento:\n{errore}\n\n"
+                                "Il programma resta com'è. Puoi riprovare più tardi dal menu ⋯ › Controlla aggiornamenti.")
+            return
+        try:
+            aggiornamento.avvia_sostituzione(path, self._versione_in_arrivo)
+        except Exception as e:
+            self._sync_buttons()
+            self._on_log(f"❌ Aggiornamento non riuscito: {e}", "red")
+            LOG.exception("preparazione dell'aggiornamento")
+            return
+        LOG.info("aggiornamento alla %s: il programma si chiude per sostituire i file", self._versione_in_arrivo)
+        self._chiusura_per_aggiornamento = True
+        self.close()
+
     def _apri_log_tecnico(self):
         """Apre il file del log tecnico (o la sua cartella, se il file non c'è ancora)."""
         path = os.path.join(cartella_log(), "spotcutter.log")
@@ -2740,6 +2858,9 @@ class SpotCutterApp(QMainWindow):
             self._on_log(f"🛑 INTERROTTA dopo {m}m {s_}s", "orange")
 
         self._impara_velocita()
+        if self._aggiornamento_in_attesa:   # arrivato mentre si lavorava: si propone ora
+            QTimer.singleShot(1500, lambda: self._aggiornamento_in_attesa
+                              and self._proponi_aggiornamento(self._aggiornamento_in_attesa))
 
         # Rimuove dalla coda i video completati (presenti nello storico), anche dopo uno
         # Stop: così premendo di nuovo Avvia si riparte da quelli che mancano
@@ -3705,6 +3826,9 @@ class SpotCutterApp(QMainWindow):
 
     def closeEvent(self, event):
         """Gestisce la chiusura pulita dell'app e dei thread con pulsanti in italiano."""
+        if self._chiusura_per_aggiornamento:   # l'aggiornamento parte solo a programma fermo
+            event.accept()
+            return
         
         # 1. Il messaggio dice cosa si interrompe davvero (niente, se il programma è fermo)
         def attivo(nome):
