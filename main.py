@@ -1813,14 +1813,12 @@ class SpotCutterApp(QMainWindow):
             try: os.makedirs(self.work_dir)
             except: pass
 
-        QTimer.singleShot(800, self._startup_checks) 
-        QTimer.singleShot(1200, self._proponi_ripresa_sessione)
-        QTimer.singleShot(4000, lambda: self._controlla_aggiornamenti(manuale=False))
+        # Controlli e domande dell'avvio: li fa partire avvia() con _sequenza_avvio(), una
+        # finestra alla volta e solo dopo che la schermata di caricamento se n'è andata
         self._aggiornamento_in_attesa = None
         self._chiusura_per_aggiornamento = False
         esito = aggiornamento.esito_precedente()
         self._appena_aggiornato = bool(esito)    # la coda si riprende senza chiedere
-        QTimer.singleShot(1800, self._mostra_novita)
         if esito:
             # pulizia di quanto scaricato ed estratto per l'aggiornamento
             QTimer.singleShot(5000, lambda: shutil.rmtree(
@@ -2025,6 +2023,20 @@ class SpotCutterApp(QMainWindow):
                 os.remove(path)
         except OSError:
             pass
+
+    def _sequenza_avvio(self):
+        """
+        Quello che serve all'avvio, in fila: strumenti, coda dell'ultima volta, novità della
+        versione. Ogni domanda aspetta che si sia risposto alla precedente, così non se ne
+        aprono due una sopra l'altra. Il controllo degli aggiornamenti parte per ultimo.
+        """
+        for w in QApplication.topLevelWidgets():   # la schermata di caricamento, se c'è ancora
+            if type(w).__name__ == "SchermataAvvio" and w.isVisible():
+                w.close()
+        self._startup_checks()
+        self._proponi_ripresa_sessione()
+        self._mostra_novita()
+        QTimer.singleShot(2500, lambda: self._controlla_aggiornamenti(manuale=False))
 
     def _proponi_ripresa_sessione(self):
         try:
@@ -2726,6 +2738,10 @@ class SpotCutterApp(QMainWindow):
             return
         if self.state.get("running"):
             self._aggiornamento_in_attesa = info   # si propone a fine lavoro
+            return
+        if not manuale and QApplication.activeModalWidget():
+            # c'è già una finestra aperta (storico, una domanda...): si aspetta che si chiuda
+            QTimer.singleShot(2000, lambda: self._on_aggiornamento(info, manuale))
             return
         self._proponi_aggiornamento(info)
 
@@ -4091,6 +4107,7 @@ def avvia(app=None, schermata=None):
         schermata.chiudi_quando_pronta(win)
     else:
         win.show()
+    QTimer.singleShot(600, win._sequenza_avvio)
     codice = app.exec()
     LOG.info("Spot Cutter chiuso (codice %s)", codice)
     sys.exit(codice)

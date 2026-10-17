@@ -1,5 +1,9 @@
 {
   "_nota": "Le novità mostrate al primo avvio di ogni versione: poche voci, titolo e due righe. tipo = nuovo | grafica | migliorato | corretto",
+  "1.5.1": [
+    {"tipo": "corretto", "titolo": "Finestre dell'avvio una alla volta",
+     "testo": "La domanda sulla coda dell'ultima volta e queste novità non si aprono più una sopra l'altra: compaiono in fila, dopo la schermata di caricamento."}
+  ],
   "1.5.0": [
     {"tipo": "nuovo", "titolo": "Aggiornamento automatico",
      "testo": "Quando esce una nuova versione, Spot Cutter te la propone all'avvio, la scarica e si installa da solo. Coda, impostazioni, libreria e yt-dlp restano come sono."},

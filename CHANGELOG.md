@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.5.1
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **Finestre dell'avvio una alla volta** — al primo avvio di una versione nuova con una coda rimasta dall'ultima volta, la domanda "Riprendere la coda?" e la schermata delle novità partivano ognuna per conto suo e si aprivano una sopra l'altra: bisognava chiudere prima le novità per poter rispondere alla coda, e la schermata di caricamento poteva restare in primo piano finché non si rispondeva. Ora all'avvio tutto va in fila: prima se ne va la schermata di caricamento, poi i controlli degli strumenti, poi la domanda sulla coda, poi le novità, e solo dopo il controllo degli aggiornamenti. Ogni finestra aspetta che si sia chiusa la precedente; anche la proposta di aggiornamento, se arriva mentre è aperta un'altra finestra, aspetta che si chiuda
+- 🇬🇧 **Startup windows one at a time** — at the first start of a new version with a queue left from last time, the "Resume the queue?" question and the what's new screen each started on their own and opened one on top of the other: the what's new screen had to be closed before answering about the queue, and the startup screen could stay in front until the answer. Now everything at startup runs in order: first the startup screen goes away, then the tool checks, then the queue question, then the what's new screen, and only after that the update check. Each window waits for the previous one to close; the update offer too, if it arrives while another window is open, waits for it to close
+
+---
+
 ## 🎬 Spot Cutter 1.5.0
 
 ### 🎨 Nuova grafica / New look
