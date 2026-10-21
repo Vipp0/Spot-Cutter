@@ -2807,7 +2807,9 @@ class SpotCutterApp(QMainWindow):
                                 "Il programma resta com'è. Puoi riprovare più tardi dal menu ⋯ › Controlla aggiornamenti.")
             return
         try:
-            aggiornamento.avvia_sostituzione(path, self._versione_in_arrivo)
+            self._on_progress(100, "Avvio l'installazione…")
+            aggiornamento.avvia_sostituzione(path, self._versione_in_arrivo,
+                                             intanto=QApplication.processEvents)
         except Exception as e:
             self._sync_buttons()
             self._on_log(f"❌ Aggiornamento non riuscito: {e}", "red")

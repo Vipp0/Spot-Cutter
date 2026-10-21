@@ -153,6 +153,8 @@ def installa(argomenti: list):
     app.setFont(QFont("Segoe UI", 11))
     schermata = SchermataAvvio()
     schermata.show()
+    schermata.raise_()
+    schermata.activateWindow()   # il permesso l'ha passato la versione vecchia (passa_primo_piano)
     schermata.stato("Attendo la chiusura di Spot Cutter…", 2)
     _aspetta_chiusura(int(a.get("--pid", 0)))
 
@@ -226,8 +228,12 @@ def installa(argomenti: list):
                 pass
         scrivi_esito(f"errore {e}")
     schermata.stato("Riapro Spot Cutter…", 100)
-    time.sleep(0.3)
-    subprocess.Popen([os.path.join(app_dir, "SpotCutter.exe")], cwd=app_dir, close_fds=True)
+    proc = subprocess.Popen([os.path.join(app_dir, "SpotCutter.exe")], cwd=app_dir, close_fds=True)
+    # la schermata resta finché non compare quella del programma aggiornato, a cui passa il
+    # primo piano: senza vuoti in mezzo, Windows non lo dà a un'altra finestra
+    import aggiornamento
+    aggiornamento.passa_primo_piano(proc.pid)
+    aggiornamento.aspetta_finestra(proc.pid, 20, QApplication.processEvents)
     schermata.close()
 
 
@@ -239,6 +245,7 @@ def avvia():
     app.setFont(QFont("Segoe UI", 11))
     schermata = SchermataAvvio()
     schermata.show()
+    schermata.activateWindow()
     schermata.stato("Carico il motore di taglio…", 15)
 
     import main   # la parte lunga: interfaccia, motore, strumenti

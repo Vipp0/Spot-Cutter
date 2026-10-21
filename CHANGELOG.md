@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.5.2
+
+### 🐛 Correzioni / Fixes
+
+- 🇮🇹 **L'aggiornamento resta in primo piano** — dopo l'installazione di un aggiornamento il programma poteva riaprirsi dietro le altre finestre. Windows lascia andare in primo piano solo un programma lanciato da quello che ci sta già, e nel passaggio tra la versione vecchia, l'installatore e quella nuova c'era un attimo in cui nessuna schermata di Spot Cutter era aperta: Windows dava allora il primo piano a un'altra finestra (per esempio il browser). Ora ognuno passa esplicitamente il permesso a quello che lancia e resta aperto finché la schermata del successivo non è comparsa: la versione vecchia si chiude quando compare l'installatore, e l'installatore quando compare il programma aggiornato. Se durante l'aggiornamento si clicca su un'altra finestra, Windows giustamente lascia in primo piano quella
+- 🇬🇧 **The update stays in front** — after installing an update the program could reopen behind other windows. Windows only lets a program come to the front if it was launched by the one already there, and in the handover between the old version, the installer and the new one there was a moment with no Spot Cutter screen open: Windows then gave the front to another window (for example the browser). Now each one explicitly passes the permission to the one it launches and stays open until the next one's screen has appeared: the old version closes when the installer appears, and the installer when the updated program appears. If you click on another window during the update, Windows rightly keeps that one in front
+
+---
+
 ## 🎬 Spot Cutter 1.5.1
 
 ### 🐛 Correzioni / Fixes

@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import zipfile
 
@@ -189,12 +190,59 @@ Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 '''
 
 
+def passa_primo_piano(pid: int):
+    """
+    Windows lascia andare in primo piano solo un programma lanciato da quello che ci sta già:
+    chi lancia (in primo piano) passa esplicitamente il permesso al processo pid.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.AllowSetForegroundWindow(int(pid))
+        except (OSError, AttributeError):
+            pass
+
+
+def aspetta_finestra(pid: int, secondi: float = 20, intanto=None) -> bool:
+    """
+    Aspetta che il processo pid mostri una finestra (al massimo "secondi"), chiamando intanto()
+    ogni poco per non bloccare la propria. Così chi lancia resta in primo piano finché l'altro
+    non è comparso, senza un vuoto in cui Windows dà il primo piano a un'altra finestra.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    trovata = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def guarda(hwnd, _):
+        p = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(p))
+        if p.value == pid and user32.IsWindowVisible(hwnd):
+            trovata.append(hwnd)
+            return False
+        return True
+
+    fine = time.monotonic() + secondi
+    while time.monotonic() < fine:
+        user32.EnumWindows(guarda, 0)
+        if trovata:
+            return True
+        if intanto:
+            intanto()
+        time.sleep(0.05)
+    return False
+
+
 def avvia_sostituzione(zip_path: str, versione: str, app: str | None = None, pid: int | None = None,
-                       riapri: bool = True) -> str:
+                       riapri: bool = True, intanto=None) -> str:
     """
     Estrae il pacchetto e lancia (staccato dal programma) lo script che fa la sostituzione
     quando il programma si chiude. Ritorna il percorso dello script. Dopo questa chiamata il
-    programma deve chiudersi.
+    programma deve chiudersi. intanto() viene chiamata mentre si aspetta che la schermata
+    dell'installatore compaia (per non bloccare la finestra).
     """
     app = os.path.abspath(app or cartella_programma())
     tmp = os.path.dirname(os.path.abspath(zip_path))
@@ -210,9 +258,13 @@ def avvia_sostituzione(zip_path: str, versione: str, app: str | None = None, pid
     # di caricamento con l'avanzamento; lo script PowerShell resta come riserva
     if riapri and sys.platform == "win32":
         try:
-            subprocess.Popen([os.path.join(nuova, "SpotCutter.exe"), "--installa", app,
-                              "--pid", str(int(pid or os.getpid())), "--esito", file_esito()],
-                             cwd=nuova, close_fds=True)
+            proc = subprocess.Popen([os.path.join(nuova, "SpotCutter.exe"), "--installa", app,
+                                     "--pid", str(int(pid or os.getpid())), "--esito", file_esito()],
+                                    cwd=nuova, close_fds=True)
+            # il programma si chiude solo quando la schermata dell'installatore è comparsa e
+            # ha preso il primo piano (che poi passerà al programma aggiornato)
+            passa_primo_piano(proc.pid)
+            aspetta_finestra(proc.pid, 20, intanto)
             return os.path.join(nuova, "SpotCutter.exe")
         except OSError:
             pass
