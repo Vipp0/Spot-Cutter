@@ -1,5 +1,9 @@
 {
   "_nota": "Le novità mostrate al primo avvio di ogni versione: poche voci, titolo e due righe. tipo = nuovo | grafica | migliorato | corretto",
+  "1.5.3": [
+    {"tipo": "nuovo", "titolo": "Tagli manuali accanto a YouTube",
+     "testo": "Aprendo i tagli manuali Spot Cutter si riduce a icona. Con la puntina \"In primo piano\" la finestra dei tagli resta sopra il browser, leggermente trasparente mentre guardi YouTube."}
+  ],
   "1.5.2": [
     {"tipo": "corretto", "titolo": "L'aggiornamento resta in primo piano",
      "testo": "Dopo l'installazione di un aggiornamento Spot Cutter si riapre davanti alle altre finestre, senza finire dietro al browser."}

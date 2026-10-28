@@ -77,6 +77,7 @@ _GLIFI = {
     "forbici": "\ue8c6", "chiudi": "\ue711", "cerca": "\ue721", "espandi": "\ue740",
     "indietro": "\ue892", "avanti": "\ue893", "altro": "\ue712",
     "stella": "\ue734", "colore": "\ue790", "ripara": "\ue90f", "migliora": "\ue9f5",
+    "puntina": "\ue718",
 }
 _font_icone_trovato = []
 
@@ -1341,7 +1342,18 @@ class BlackdetectDialog(QDialog):
 
     def __init__(self, vid_path: str, txt_path: str, settings: dict, parent=None,
                  nomi_pronti: list | None = None):
-        super().__init__(parent)
+        # Finestra indipendente, non figlia della principale: così resta visibile quando
+        # Spot Cutter si riduce a icona per lasciare spazio a YouTube. Lo stile e l'icona,
+        # che le figlie ereditano, si prendono a mano dalla finestra principale.
+        super().__init__(None)
+        self._principale = parent
+        if parent is not None:
+            self.setStyleSheet(parent.styleSheet())
+            self.setWindowIcon(parent.windowIcon())
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint
+                            | Qt.WindowType.WindowCloseButtonHint)
+        self._memoria = QSettings("SpotCutter", "SpotCutterUltra")   # posizione e primo piano
+        self._stato_principale = Qt.WindowState.WindowNoState
         self.vid_path  = vid_path
         self.txt_path  = txt_path
         self.settings  = settings
@@ -1463,9 +1475,33 @@ class BlackdetectDialog(QDialog):
         btn_row.addWidget(btn_open)
         btn_row.addWidget(btn_cancel)
         btn_row.addStretch()
+        self._btn_principale = QPushButton("Mostra Spot Cutter")
+        self._btn_principale.setObjectName("btn_dlg_cancel")
+        self._btn_principale.setToolTip("Riporta su la finestra principale (o la riduce di nuovo a icona)\n"
+                                        "senza chiudere i tagli manuali")
+        self._btn_principale.clicked.connect(self._alterna_principale)
+        self._btn_principale.setVisible(parent is not None)
+        self._btn_primo_piano = QPushButton(" In primo piano")
+        self._btn_primo_piano.setObjectName("btn_primo_piano")
+        self._btn_primo_piano.setIcon(icona("puntina", "#1D3B53"))
+        self._btn_primo_piano.setCheckable(True)
+        self._btn_primo_piano.setToolTip("Tiene questa finestra sopra le altre, per esempio sopra YouTube.\n"
+                                         "Mentre lavori in un'altra finestra diventa leggermente trasparente.")
+        self._btn_primo_piano.toggled.connect(self._imposta_primo_piano)
+        btn_row.addWidget(self._btn_principale)
+        btn_row.addWidget(self._btn_primo_piano)
         right.addLayout(btn_row)
 
         root.addLayout(right, stretch=1)
+
+        # Dove e com'era l'ultima volta; la finestra principale si riduce a icona all'apertura
+        # e torna com'era alla chiusura
+        geometria = self._memoria.value("tagli_geometria")
+        if geometria:
+            self.restoreGeometry(geometria)
+        QApplication.instance().applicationStateChanged.connect(self._aggiorna_trasparenza)
+        self.finished.connect(self._alla_chiusura)
+        QTimer.singleShot(0, self._dopo_apertura)
 
         # Collega il segnale thread-safe al metodo UI
         self._sig_blacks_ready.connect(self._on_blacks_ready)
@@ -1649,6 +1685,72 @@ class BlackdetectDialog(QDialog):
             QMessageBox.warning(self, "Anteprima non disponibile",
                                 f"Non riesco ad avviare ffplay (di solito è installato insieme "
                                 f"a ffmpeg):\n{e}")
+
+    # ── finestra principale, primo piano, trasparenza ────────────────────────
+    def _dopo_apertura(self):
+        self._btn_primo_piano.setChecked(self._memoria.value("tagli_primo_piano", False, type=bool))
+        p = self._principale
+        if p is not None and not p.isMinimized():
+            self._stato_principale = p.windowState()
+            p.showMinimized()
+        self._aggiorna_pulsante_principale()
+        self.raise_()
+        self.activateWindow()
+
+    def _alterna_principale(self):
+        p = self._principale
+        if p.isMinimized():
+            p.setWindowState(self._stato_principale & ~Qt.WindowState.WindowMinimized)
+            p.show()
+            self.raise_()            # i tagli restano a portata di mano
+            self.activateWindow()
+        else:
+            self._stato_principale = p.windowState()
+            p.showMinimized()
+        self._aggiorna_pulsante_principale()
+
+    def _aggiorna_pulsante_principale(self):
+        if self._principale is not None:
+            self._btn_principale.setText("Mostra Spot Cutter" if self._principale.isMinimized()
+                                         else "Riduci Spot Cutter")
+
+    def _imposta_primo_piano(self, acceso: bool):
+        self._memoria.setValue("tagli_primo_piano", acceso)
+        if sys.platform == "win32":
+            # direttamente con Windows: cambiare il flag di Qt nasconderebbe e rimostrerebbe la finestra
+            import ctypes
+            from ctypes import wintypes
+            u32 = ctypes.WinDLL("user32")
+            u32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                         ctypes.c_int, ctypes.c_int, wintypes.UINT]
+            HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+            SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x1, 0x2, 0x10
+            u32.SetWindowPos(int(self.winId()), HWND_TOPMOST if acceso else HWND_NOTOPMOST,
+                             0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE)
+        else:
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, acceso)
+            self.show()
+        self._aggiorna_trasparenza()
+
+    def _aggiorna_trasparenza(self, *_):
+        """In primo piano e con il lavoro in un'altra finestra (YouTube): leggermente trasparente."""
+        fuori = QApplication.applicationState() != Qt.ApplicationState.ApplicationActive
+        self.setWindowOpacity(0.85 if fuori and self._btn_primo_piano.isChecked() else 1.0)
+        if not fuori:
+            self._aggiorna_pulsante_principale()
+
+    def _alla_chiusura(self):
+        try:
+            QApplication.instance().applicationStateChanged.disconnect(self._aggiorna_trasparenza)
+        except (RuntimeError, TypeError):
+            pass
+        self._memoria.setValue("tagli_geometria", self.saveGeometry())
+        p = self._principale
+        if p is not None and p.isMinimized():
+            p.setWindowState(self._stato_principale & ~Qt.WindowState.WindowMinimized)
+            p.show()
+            p.raise_()
+            p.activateWindow()
 
     def _chiudi_anteprima(self):
         if self._anteprima and self._anteprima.poll() is None:

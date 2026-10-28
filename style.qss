@@ -509,6 +509,23 @@ QPushButton#btn_dlg_cancel {
 QPushButton#btn_dlg_reset:hover,
 QPushButton#btn_dlg_cancel:hover { background-color: #F0F3F6; color: #1F2933; }
 
+/* Tagli manuali: "In primo piano" è un interruttore, arancione quando è acceso */
+QPushButton#btn_primo_piano {
+    background-color: #FFFFFF;
+    color: #52606D;
+    border: 1px solid #CBD2D9;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+}
+QPushButton#btn_primo_piano:hover { background-color: #F0F3F6; color: #1F2933; }
+QPushButton#btn_primo_piano:checked {
+    background-color: #FDEBE3;
+    color: #B8410F;
+    border: 1px solid #E8541E;
+    font-weight: 600;
+}
+
 QLabel#lbl_dlg_filename {
     color: #8592A0;
     font-style: italic;

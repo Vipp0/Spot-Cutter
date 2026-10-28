@@ -5,6 +5,15 @@ Changes after release 1.2. Versions 1.3, 1.3.1 and 1.3.2 were released together 
 
 ---
 
+## 🎬 Spot Cutter 1.5.3
+
+### ✨ Nuove funzionalità / New features
+
+- 🇮🇹 **Tagli manuali accanto a YouTube** — la finestra dei tagli manuali è ora una finestra a sé: quando si apre, Spot Cutter si riduce a icona e lascia libero lo schermo, così si può controllare il video su YouTube con i tagli a portata di mano; alla chiusura (Salva o Annulla) la finestra principale torna com'era. Il pulsante "Mostra Spot Cutter" la riporta su senza chiudere i tagli, e "Riduci Spot Cutter" la rimanda giù. Il nuovo interruttore "In primo piano" (con la puntina) tiene la finestra dei tagli sopra le altre, per esempio sopra il browser; mentre si lavora in un'altra finestra diventa leggermente trasparente, e torna normale appena ci si ritorna. La finestra ricorda posizione, dimensioni e la scelta del primo piano, e si riapre come la si era lasciata
+- 🇬🇧 **Manual cuts next to YouTube** — the manual cuts window is now a window of its own: when it opens, Spot Cutter minimizes and leaves the screen free, so the video can be checked on YouTube with the cuts at hand; on closing (Save or Cancel) the main window comes back as it was. The "Show Spot Cutter" button brings it back without closing the cuts, and "Minimize Spot Cutter" sends it down again. The new "Always on top" switch (with the pin) keeps the cuts window above the others, for example above the browser; while working in another window it becomes slightly transparent, and goes back to normal as soon as you return to it. The window remembers its position, size and the always-on-top choice, and reopens as it was left
+
+---
+
 ## 🎬 Spot Cutter 1.5.2
 
 ### 🐛 Correzioni / Fixes
