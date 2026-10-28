@@ -77,7 +77,8 @@ _GLIFI = {
     "forbici": "\ue8c6", "chiudi": "\ue711", "cerca": "\ue721", "espandi": "\ue740",
     "indietro": "\ue892", "avanti": "\ue893", "altro": "\ue712",
     "stella": "\ue734", "colore": "\ue790", "ripara": "\ue90f", "migliora": "\ue9f5",
-    "puntina": "\ue718",
+    "puntina": "\ue718", "puntina_piena": "\ue840", "mostra_finestra": "\ue8a7",
+    "riduci_finestra": "\ue921",
 }
 _font_icone_trovato = []
 
@@ -1412,7 +1413,25 @@ class BlackdetectDialog(QDialog):
 
         lbl_editor = QLabel("Editor TXT — scrivi il nome dopo il timestamp")
         lbl_editor.setStyleSheet("font-weight: bold; font-size: 12px;")
-        right.addWidget(lbl_editor)
+        # In alto a destra, solo icone: finestra principale su/giù e "sempre in primo piano"
+        testata = QHBoxLayout()
+        testata.setSpacing(4)
+        testata.addWidget(lbl_editor)
+        testata.addStretch()
+        self._btn_principale = QPushButton()
+        self._btn_principale.setObjectName("btn_testata_tagli")
+        self._btn_principale.clicked.connect(self._alterna_principale)
+        self._btn_principale.setVisible(parent is not None)
+        self._btn_primo_piano = QPushButton(glifo("puntina", "📌"))
+        self._btn_primo_piano.setObjectName("btn_testata_tagli")
+        self._btn_primo_piano.setCheckable(True)
+        self._btn_primo_piano.setToolTip("Sempre in primo piano: tiene questa finestra sopra le altre,\n"
+                                         "per esempio sopra YouTube. Mentre lavori in un'altra finestra\n"
+                                         "diventa leggermente trasparente.")
+        self._btn_primo_piano.toggled.connect(self._imposta_primo_piano)
+        testata.addWidget(self._btn_principale)
+        testata.addWidget(self._btn_primo_piano)
+        right.addLayout(testata)
 
         self._editor = QPlainTextEdit()
         self._editor.setPlaceholderText(
@@ -1475,21 +1494,6 @@ class BlackdetectDialog(QDialog):
         btn_row.addWidget(btn_open)
         btn_row.addWidget(btn_cancel)
         btn_row.addStretch()
-        self._btn_principale = QPushButton("Mostra Spot Cutter")
-        self._btn_principale.setObjectName("btn_dlg_cancel")
-        self._btn_principale.setToolTip("Riporta su la finestra principale (o la riduce di nuovo a icona)\n"
-                                        "senza chiudere i tagli manuali")
-        self._btn_principale.clicked.connect(self._alterna_principale)
-        self._btn_principale.setVisible(parent is not None)
-        self._btn_primo_piano = QPushButton(" In primo piano")
-        self._btn_primo_piano.setObjectName("btn_primo_piano")
-        self._btn_primo_piano.setIcon(icona("puntina", "#1D3B53"))
-        self._btn_primo_piano.setCheckable(True)
-        self._btn_primo_piano.setToolTip("Tiene questa finestra sopra le altre, per esempio sopra YouTube.\n"
-                                         "Mentre lavori in un'altra finestra diventa leggermente trasparente.")
-        self._btn_primo_piano.toggled.connect(self._imposta_primo_piano)
-        btn_row.addWidget(self._btn_principale)
-        btn_row.addWidget(self._btn_primo_piano)
         right.addLayout(btn_row)
 
         root.addLayout(right, stretch=1)
@@ -1710,12 +1714,19 @@ class BlackdetectDialog(QDialog):
         self._aggiorna_pulsante_principale()
 
     def _aggiorna_pulsante_principale(self):
-        if self._principale is not None:
-            self._btn_principale.setText("Mostra Spot Cutter" if self._principale.isMinimized()
-                                         else "Riduci Spot Cutter")
+        if self._principale is None:
+            return
+        if self._principale.isMinimized():
+            self._btn_principale.setText(glifo("mostra_finestra", "⧉"))
+            self._btn_principale.setToolTip("Mostra Spot Cutter: riporta su la finestra principale\n"
+                                            "senza chiudere i tagli manuali")
+        else:
+            self._btn_principale.setText(glifo("riduci_finestra", "–"))
+            self._btn_principale.setToolTip("Riduci Spot Cutter: rimanda a icona la finestra principale")
 
     def _imposta_primo_piano(self, acceso: bool):
         self._memoria.setValue("tagli_primo_piano", acceso)
+        self._btn_primo_piano.setText(glifo("puntina_piena" if acceso else "puntina", "📌"))
         if sys.platform == "win32":
             # direttamente con Windows: cambiare il flag di Qt nasconderebbe e rimostrerebbe la finestra
             import ctypes

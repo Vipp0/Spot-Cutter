@@ -509,21 +509,25 @@ QPushButton#btn_dlg_cancel {
 QPushButton#btn_dlg_reset:hover,
 QPushButton#btn_dlg_cancel:hover { background-color: #F0F3F6; color: #1F2933; }
 
-/* Tagli manuali: "In primo piano" è un interruttore, arancione quando è acceso */
-QPushButton#btn_primo_piano {
-    background-color: #FFFFFF;
+/* Tagli manuali: le due icone in alto a destra; la puntina "sempre in primo piano" è un
+   interruttore, arancione quando è accesa. La misura sta qui: lo stile vince su setFixedSize */
+QPushButton#btn_testata_tagli {
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", "Segoe UI Symbol";
+    font-weight: 400;
+    font-size: 14px;
+    background-color: transparent;
     color: #52606D;
-    border: 1px solid #CBD2D9;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 13px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px;
+    min-width: 30px; max-width: 30px;
+    min-height: 28px; max-height: 28px;
 }
-QPushButton#btn_primo_piano:hover { background-color: #F0F3F6; color: #1F2933; }
-QPushButton#btn_primo_piano:checked {
+QPushButton#btn_testata_tagli:hover { background-color: #EEF2F6; color: #1D3B53; border: 1px solid #DCE3EA; }
+QPushButton#btn_testata_tagli:checked {
     background-color: #FDEBE3;
-    color: #B8410F;
-    border: 1px solid #E8541E;
-    font-weight: 600;
+    color: #E8541E;
+    border: 1px solid #F4B79C;
 }
 
 QLabel#lbl_dlg_filename {
